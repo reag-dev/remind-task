@@ -109,7 +109,7 @@ CREATE UNIQUE INDEX columns_one_due_date_per_table
 -- =========================================================
 -- records
 -- =========================================================
-CREATE TABLE records (                       -- [pendente — Phase 3]
+CREATE TABLE records (                       -- [implementado — Phase 3]
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     table_id    UUID NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
     user_id     UUID NOT NULL REFERENCES users(id)  ON DELETE CASCADE,  -- nota 1
@@ -281,6 +281,49 @@ WHERE due_date BETWEEN :hoje - INTERVAL '30 days'
 | `columns.type` é varchar + CHECK, não ENUM nativo | `ALTER TYPE ... ADD VALUE` não roda em transação nem reverte |
 | `columns.key` é gerado e **imutável**; `columns.type` também é imutável | Renomear não pode reescrever registros; trocar o tipo corromperia valores já gravados |
 | `columns.position` só muda pelo endpoint de reorder | PATCH isolado em uma posição colidiria com outra coluna |
+
+---
+
+## Verificação: os índices realmente são usados
+
+A decisão de rejeitar EAV se apoia em duas consultas quentes. Medido com
+`EXPLAIN (ANALYZE, BUFFERS)` sobre **20.000 registros** numa tabela:
+
+### RF11 — página ordenada por vencimento
+
+```sql
+SELECT id FROM records WHERE table_id = ? ORDER BY due_date ASC, created_at ASC LIMIT 50;
+```
+
+```
+Limit  (actual time=0.251..0.272 rows=50)
+  -> Incremental Sort   Presorted Key: due_date
+       -> Index Scan using records_table_due_idx  (actual rows=53)
+Execution Time: 0.417 ms      Buffers: shared hit=55
+```
+
+O ponto: `Presorted Key: due_date` e **53 linhas lidas de 20.000**. O índice já
+entrega a ordem, então a paginação não paga sort completo. Em EAV o mesmo
+resultado exigiria pivotar N linhas por registro e ordenar por um `TEXT` casteado
+— sort completo, sem índice aproveitável.
+
+### RF12 — varredura do job de alertas
+
+```sql
+SELECT id FROM records WHERE due_date BETWEEN :hoje - 30d AND :hoje + 7d;
+```
+
+```
+Bitmap Heap Scan  (actual time=0.390..1.397 rows=838)
+  -> Bitmap Index Scan on records_due_scan_idx   Buffers: shared hit=2
+Execution Time: 1.644 ms
+```
+
+O índice parcial (`WHERE due_date IS NOT NULL`) resolve o filtro tocando **2
+buffers**. Registros sem vencimento nem entram no índice.
+
+Reproduzir: gerar registros e rodar os dois `EXPLAIN` — o comando está no
+histórico do commit da Phase 3.
 
 ---
 

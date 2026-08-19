@@ -75,14 +75,14 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–2 concluídas** — infraestrutura, autenticação e estrutura dinâmica das tabelas.
+**Phases 0–3 concluídas** — infraestrutura, autenticação, estrutura dinâmica e registros.
 
 | Phase | Escopo | Status |
 |---|---|---|
 | 0 | Scaffold, Docker Compose, health check | ✅ |
 | 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
 | 2 | `tables` — tabelas e colunas dinâmicas | ✅ |
-| 3 | `records` — registros JSONB validados | ⬜ |
+| 3 | `records` — registros JSONB validados | ✅ |
 | 4 | Status e ordenação por vencimento | ⬜ |
 | 5 | `alerts` — regras, job Celery, inbox | ⬜ |
 | 6 | `exports` — CSV seguro | ⬜ |
@@ -106,7 +106,27 @@ Não há frontend. A interface do MVP é:
 | `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/columns/{col}/` | Uma coluna |
 | `PATCH` | `/api/tables/{id}/columns/reorder/` | Reordena todas as colunas de uma vez |
 
+| `GET`/`POST` | `/api/tables/{id}/records/` | Registros da tabela (RF07) |
+| `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/records/{rec}/` | Um registro (RF08, RF09) |
+
 Tipos de coluna: `text`, `number`, `date`, `datetime`, `boolean`, `email`, `select`, `due_date`.
+
+### Como os registros funcionam
+
+Cada registro é **uma linha** com um `data JSONB`, não N linhas de EAV. As chaves do JSONB são os `key` das colunas, e o payload é validado contra a definição da tabela a cada escrita:
+
+```bash
+curl -X POST http://localhost:8000/api/tables/$T/records/ \
+  -H "Authorization: Bearer $ACCESS" -H 'Content-Type: application/json' \
+  -d '{"data": {"cliente":"Empresa A","contrato":"CT-001",
+                "data_de_vencimento":"2026-08-20","status":"Ativo"}}'
+```
+
+- **Chave desconhecida → 400.** Nada de lixo entrando no JSONB.
+- **Tipo errado → 400.** `"true"` não passa por booleano, `20/08/2026` não passa por data, valor fora da lista não passa por `select`.
+- **`PATCH` mescla com o estado atual** antes de validar — é o que permite recusar um PATCH que esvazia um campo obrigatório. Olhando só o delta, isso passaria.
+- **`due_date` é promovida** de `data[<coluna due_date>]` para uma coluna real no `save()`. É somente leitura na API: mandá-la no corpo não a faz divergir do JSONB.
+- **Excluir uma coluna limpa a chave dela** em todos os registros — e zera o `due_date` promovido se era a coluna de vencimento.
 
 Exemplo:
 

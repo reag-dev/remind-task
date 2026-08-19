@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-2 concluídas em 2026-08-19; Phases 3-9 pendentes
+**Status:** active — Phases 0-3 concluídas em 2026-08-19; Phases 4-9 pendentes
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal

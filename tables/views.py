@@ -6,7 +6,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from tables.models import Column, Table
+from records.models import Record
+from tables.models import Column, ColumnType, Table
 from tables.serializers import ColumnSerializer, ReorderSerializer, TableSerializer
 
 
@@ -79,6 +80,26 @@ class ColumnViewSet(viewsets.ModelViewSet):
         if self.action in {"create", "reorder"}:
             context["table"] = self.get_table()
         return context
+
+    def perform_destroy(self, instance):
+        """
+        Apagar a coluna também apaga a chave dela em todos os registros.
+
+        Sem isso o `data` acumula chaves órfãs: elas reaparecem no CSV (RF13),
+        incham o índice GIN e voltam a ser lidas se alguém recriar uma coluna com
+        o mesmo slug. Quando a coluna removida é a de vencimento, o `due_date`
+        promovido também precisa zerar — senão o job de alertas (RF12) dispararia
+        por um vencimento que não tem mais origem.
+        """
+        table_id = instance.table_id
+        key = instance.key
+        was_due_date = instance.type == ColumnType.DUE_DATE
+
+        with transaction.atomic():
+            instance.delete()
+            Record.objects.purge_column_key(
+                table_id=table_id, key=key, was_due_date=was_due_date
+            )
 
     @extend_schema(
         tags=["columns"],

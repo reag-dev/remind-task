@@ -91,3 +91,34 @@ def columns(db, table):
         Column.objects.create(table=table, name=name, type=type_, position=i, **extra)
         for i, (name, type_, extra) in enumerate(specs)
     ]
+
+
+# ---------------------------------------------------------------- registros
+
+# Linha válida para a estrutura da fixture `columns`.
+VALID_ROW = {
+    "cliente": "Empresa A",
+    "contrato": "CT-001",
+    "responsavel": "João",
+    "data_de_vencimento": "2026-08-20",
+    "status": "Ativo",
+}
+
+
+@pytest.fixture
+def valid_row():
+    return dict(VALID_ROW)
+
+
+@pytest.fixture
+def record(db, table, columns):
+    from records.models import Record
+
+    return Record.objects.create(table=table, data=dict(VALID_ROW))
+
+
+@pytest.fixture
+def other_record(db, other_table):
+    from records.models import Record
+
+    return Record.objects.create(table=other_table, data={})
