@@ -125,7 +125,7 @@ CREATE INDEX records_due_scan_idx  ON records (due_date) WHERE due_date IS NOT N
 CREATE INDEX records_data_gin      ON records USING GIN (data jsonb_path_ops);
 
 -- =========================================================
--- alert_rules
+-- alert_rules                                 [implementado — Phase 5]
 -- =========================================================
 CREATE TABLE alert_rules (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -142,7 +142,7 @@ CREATE TABLE alert_rules (
 -- offset_days:  3 = avisa 3 dias ANTES · 0 = no dia · -1 = 1 dia DEPOIS (cobrança)
 
 -- =========================================================
--- alerts
+-- alerts                                      [implementado — Phase 5]
 -- =========================================================
 CREATE TABLE alerts (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -249,8 +249,12 @@ END
 ### 5. Idempotência dos alertas é do banco
 `UNIQUE (record_id, rule_id, trigger_date)` + `INSERT ... ON CONFLICT DO NOTHING`. Beat a cada 15 min, worker duplicado, retry de task — nada duplica notificação. `notified_at` sozinho não resolve concorrência: dois workers leem `NULL` ao mesmo tempo e ambos inserem.
 
-### 6. Mudança de vencimento invalida alerta pendente
-Se `due_date` muda, os `alerts` com `status='pending'` daquele registro são apagados no mesmo `save()`; o job os regera com o novo `trigger_date`. `due_date_snapshot` permite auditar o que estava valendo quando o alerta nasceu.
+### 6. Mudança de vencimento descarta alerta obsoleto
+Quando `due_date` muda, os alertas **ainda acionáveis** (`pending`, `sent`) cujo `due_date_snapshot` discorda do vencimento atual são apagados; o job os regera com o `trigger_date` novo. Adiar um contrato de agosto para janeiro tornaria o aviso "vence em 20/08" informação errada no inbox.
+
+Alertas `read` e `dismissed` **sobrevivem**: são registro do que de fato aconteceu, e passam a expor `is_stale: true`.
+
+A regra é declarativa, não baseada em rastrear a mudança — qualquer alerta acionável cujo snapshot discorde do vencimento atual está obsoleto, não importa como chegou lá. Implementada como sinal `post_save` em `Record`, dentro de `alerts`, para manter a direção da dependência: alertas conhecem registros, não o contrário.
 
 ### 7. Janela de varredura
 O job não varre histórico infinito:

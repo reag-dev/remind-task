@@ -5,6 +5,8 @@ Nada aqui pode assumir DEBUG=True. Ajustes de ambiente ficam em dev.py / prod.py
 """
 
 from datetime import timedelta
+
+from celery.schedules import crontab
 from pathlib import Path
 
 from decouple import Csv, config
@@ -42,6 +44,7 @@ LOCAL_APPS = [
     "accounts",
     "tables",
     "records",
+    "alerts",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -228,4 +231,15 @@ LOGGING = {
         "console": {"class": "logging.StreamHandler", "formatter": "simple"},
     },
     "root": {"handlers": ["console"], "level": "INFO"},
+}
+
+# Varredura de vencimentos (RF12). A cada 15 minutos: a granularidade do sistema
+# é o DIA, então o intervalo só precisa ser curto o bastante para que a virada
+# do dia em qualquer fuso seja notada logo. Repetição é inofensiva — a
+# constraint alerts_idempotency impede duplicata.
+CELERY_BEAT_SCHEDULE = {
+    "scan-due-records": {
+        "task": "alerts.scan_due_records",
+        "schedule": crontab(minute="*/15"),
+    },
 }

@@ -75,7 +75,7 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–4 concluídas** — infraestrutura, autenticação, estrutura dinâmica, registros e controle de vencimento.
+**Phases 0–5 concluídas** — infraestrutura, autenticação, estrutura dinâmica, registros, controle de vencimento e alertas automáticos.
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -84,7 +84,7 @@ Não há frontend. A interface do MVP é:
 | 2 | `tables` — tabelas e colunas dinâmicas | ✅ |
 | 3 | `records` — registros JSONB validados | ✅ |
 | 4 | Status e ordenação por vencimento | ✅ |
-| 5 | `alerts` — regras, job Celery, inbox | ⬜ |
+| 5 | `alerts` — regras, job Celery, inbox | ✅ |
 | 6 | `exports` — CSV seguro | ⬜ |
 | 7 | Row-Level Security e endurecimento | ⬜ |
 | 8 | Suite de segurança do MVP | ⬜ |
@@ -151,6 +151,46 @@ O status **não é armazenado**: um valor gravado ficaria errado sozinho à meia
 **Ordenação padrão sai de um único `ORDER BY due_date ASC` com NULL por último** — que já produz exatamente a prioridade do RF11: vencidos (mais antigo primeiro), hoje, próximos, futuros, sem data. Nenhuma lógica de status participa da ordenação. `?ordering=` aceita `due_date`, `created_at`, `updated_at` e `position`, com `-` para inverter e NULL sempre no fim.
 
 Filtros: `?status=`, `?due_before=`, `?due_after=`, `?has_due_date=`. Status inexistente devolve **400**, não lista vazia — senão o cliente concluiria "não há registros" quando na verdade errou o filtro.
+
+### Alertas
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/alerts/` | Caixa de entrada do usuário (RF12) |
+| `POST` | `/api/alerts/{id}/read/` | Marca como lido |
+| `POST` | `/api/alerts/{id}/dismiss/` | Descarta sem apagar o histórico |
+| `GET`/`POST` | `/api/tables/{id}/alert-rules/` | Antecedências configuradas |
+| `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/alert-rules/{rule}/` | Uma regra |
+
+Um worker Celery Beat roda `alerts.scan_due_records` **a cada 15 minutos**. A granularidade do sistema é o dia; o intervalo curto existe só para que a virada do dia em qualquer fuso seja notada logo.
+
+**Alertas não são criados pela API** — `POST /api/alerts/` retorna 405. Nascem do job.
+
+#### Idempotência é do banco, não da aplicação
+
+```sql
+CONSTRAINT alerts_idempotency UNIQUE (record_id, rule_id, trigger_date)
+```
+
+RF12 exige evitar envio duplicado. Confiar em `notified_at IS NULL` não resolve concorrência: dois workers leem `NULL` ao mesmo tempo e ambos inserem. Com a constraint, beat sobreposto, retry de task ou worker duplicado não produzem duplicata — o banco recusa.
+
+O serviço ainda faz um pré-filtro do que já existe, mas por economia, não por correção: sem ele cada execução reenviaria toda a janela ao Postgres só para ser recusada, 96 vezes por dia.
+
+`trigger_date` é derivado do **vencimento**, não do dia da execução. Se dependesse de "hoje", cada dia geraria um alerta novo para o mesmo vencimento.
+
+#### Regras de antecedência
+
+`offset_days` positivo avisa antes; `0` no dia; **negativo avisa depois** — `-2` é cobrança de atraso. Uma tabela pode ter várias regras simultâneas (avisar 7 dias antes *e* no dia): são avisos distintos, não duplicata.
+
+A regra padrão nasce por sinal quando a tabela ganha uma coluna `due_date`, usando o `alert_lead_days` da tabela. Como sinal, e não dentro da view, ela também é criada por seed, script ou admin.
+
+#### Vencimento mudou
+
+Adiar um contrato torna o aviso "vence em 20/08" informação errada. Alertas ainda **acionáveis** (`pending`, `sent`) cujo `due_date_snapshot` discorda do vencimento atual são descartados e regerados com a data nova. Os já **lidos ou descartados sobrevivem** — são histórico — e passam a expor `is_stale: true`.
+
+#### O payload não vaza (RS05)
+
+Um alerta carrega apenas nome da tabela, vencimento e um rótulo curto do registro. Nunca o `data` completo, nunca o valor de coluna marcada como `is_sensitive`. O rótulo é montado **na leitura**, então marcar uma coluna como sensível depois também protege os alertas já emitidos.
 
 Exemplo:
 
