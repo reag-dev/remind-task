@@ -14,9 +14,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Sem build-essential/libpq-dev de proposito: todas as deps de requirements/
+# distribuem wheel para cp312 (psycopg[binary] e argon2-cffi inclusive), entao
+# nada compila do source. Se algum dia uma dep so tiver sdist, o build quebra
+# aqui — a correcao e um estagio de build separado, nao inchar a imagem final.
+# curl e usado pelo healthcheck do docker-compose.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        build-essential libpq-dev curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # CAs locais opcionais. Vazio na maioria das máquinas — ver docker/certs/README.md.
