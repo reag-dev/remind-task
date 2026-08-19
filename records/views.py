@@ -1,15 +1,23 @@
+import logging
+
+from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
 
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from core.dates import user_today
+from exports.services import ALLOWED_DELIMITERS, filename_for, stream_rows
 from records.filters import NullsLastOrderingFilter, RecordFilter, RecordFilterBackend
 from records.models import Record
 from records.serializers import RecordSerializer
 from records.status import DueStatus
 from tables.models import Table
+
+logger = logging.getLogger(__name__)
 
 ORDERING_DESCRIPTION = (
     "Campo de ordenação. Prefixo `-` inverte. Valores aceitos: "
@@ -87,3 +95,52 @@ class RecordViewSet(viewsets.ModelViewSet):
         # página sejam avaliados contra a mesma data, mesmo virando o dia no meio.
         context["today"] = user_today(self.request.user)
         return context
+
+    @extend_schema(
+        tags=["records"],
+        summary="Exporta a tabela em CSV (RF13)",
+        description=(
+            "Exporta exatamente o que a listagem devolveria: os mesmos filtros "
+            "(`?status=`, `?due_before=`…) e a mesma ordenação valem aqui. "
+            "Colunas na ordem definida na tabela, com os rótulos como cabeçalho."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "delimiter",
+                description="`,` (padrão) ou `;` — Excel em pt-BR costuma esperar `;`.",
+                enum=sorted(ALLOWED_DELIMITERS),
+            )
+        ],
+        responses={(200, "text/csv"): OpenApiTypes.BINARY},
+    )
+    @action(detail=False, methods=["get"])
+    def export(self, request, table_id=None):
+        """
+        RS08 — a exportação NÃO tem caminho de consulta próprio.
+
+        É uma ação do próprio RecordViewSet, então usa literalmente o mesmo
+        `get_queryset()` e o mesmo `filter_queryset()` da listagem. Uma view
+        separada que refizesse `get_object_or_404(Table, ...)` seria um segundo
+        lugar onde esquecer o filtro por dono — exatamente o risco que o
+        requisito quer eliminar.
+        """
+        table = self.get_table()
+        columns = list(table.columns.all())
+        queryset = self.filter_queryset(self.get_queryset())
+
+        today = user_today(request.user)
+        filename = filename_for(table, today)
+
+        response = StreamingHttpResponse(
+            stream_rows(
+                table, columns, queryset, delimiter=request.query_params.get("delimiter", ",")
+            ),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+
+        # RS05 — só identificadores e contagem. Nunca conteúdo de célula.
+        logger.info(
+            "Exportação CSV: tabela=%s colunas=%s", table.id, len(columns)
+        )
+        return response

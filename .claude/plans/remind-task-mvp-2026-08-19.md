@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-5 concluídas em 2026-08-19; Phases 6-9 pendentes
+**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phases 7-9 pendentes
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -335,7 +335,9 @@ CREATE INDEX alerts_pending_idx ON alerts (status, trigger_date) WHERE status = 
 4. **Sanitização de CSV injection:** prefixar `'` em células iniciadas por `=`, `+`, `-`, `@`, TAB ou CR (RS08).
 5. `Content-Disposition` com nome de arquivo sanitizado; log registra apenas `table_id` e contagem de linhas, nunca conteúdo.
 
-**Files Touched:** `exports/views.py`, `exports/services.py`, `exports/urls.py`, `exports/tests/test_export.py`
+**Desvio:** o endpoint ficou em `/api/tables/{id}/records/export/` como *action* do `RecordViewSet`, não em `/api/tables/{id}/export/` com view própria. Motivo: RS08 pede que a exportação reuse a queryset autorizada da listagem — uma action reusa `get_queryset()` por construção, enquanto uma `APIView` separada refaria a busca da tabela e seria um segundo lugar onde esquecer o filtro por dono.
+
+**Files Touched:** `exports/services.py`, `exports/csv_safety.py`, `records/views.py`, `exports/services.py`, `exports/urls.py`, `exports/tests/test_export.py`
 **Verify:** `pytest exports/ -v`
 **Done When:** export de tabela alheia → 404; célula `=SUM(A1)` sai como `'=SUM(A1)`; ordem das colunas bate com `position`.
 **Time:** 3h

