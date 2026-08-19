@@ -75,12 +75,12 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phase 0 concluída** — scaffold e infraestrutura local.
+**Phases 0–1 concluídas** — infraestrutura local e autenticação.
 
 | Phase | Escopo | Status |
 |---|---|---|
 | 0 | Scaffold, Docker Compose, health check | ✅ |
-| 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ⬜ |
+| 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
 | 2 | `tables` — tabelas e colunas dinâmicas | ⬜ |
 | 3 | `records` — registros JSONB validados | ⬜ |
 | 4 | Status e ordenação por vencimento | ⬜ |
@@ -90,4 +90,33 @@ Não há frontend. A interface do MVP é:
 | 8 | Suite de segurança do MVP | ⬜ |
 | 9 | Documentação e seed demo | ⬜ |
 
-> **Atenção antes da Phase 1:** `AUTH_USER_MODEL` ainda não está definido e nenhuma migration foi aplicada. Isso é intencional — trocar o modelo de usuário depois do primeiro `migrate` exige recriar o banco. A Phase 1 define `AUTH_USER_MODEL = "accounts.User"` **antes** de qualquer `migrate`. Se você rodou `migrate` por engano, use `make reset`.
+### Endpoints disponíveis
+
+| Método | Rota | O que faz |
+|---|---|---|
+| `GET` | `/api/health/` | Health check com checagem real de banco |
+| `POST` | `/api/auth/register/` | Cadastro (RF01) |
+| `POST` | `/api/auth/login/` | Login — access no corpo, refresh em cookie httpOnly (RF02) |
+| `POST` | `/api/auth/refresh/` | Renova o access, rotaciona o refresh |
+| `POST` | `/api/auth/logout/` | Blacklist do refresh + limpa cookie |
+| `GET`/`PATCH` | `/api/auth/me/` | Conta autenticada (nome, fuso) |
+
+Exemplo:
+
+```bash
+curl -X POST http://localhost:8000/api/auth/register/ \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"voce@example.com","name":"Voce","password":"Contrato!Vencendo#2026"}'
+
+curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"voce@example.com","password":"Contrato!Vencendo#2026"}'
+```
+
+### Decisões de segurança já em vigor
+
+- **Argon2id** como hasher primário; senha validada contra tamanho mínimo, lista de senhas comuns e similaridade com e-mail/nome.
+- **Refresh token só em cookie `httpOnly`**, com `path=/api/auth/` — não trafega nas rotas de dados e é invisível para JavaScript. O access (15 min) fica em memória no cliente.
+- **Rotação + blacklist** de refresh: cada renovação queima o token anterior, e o logout invalida de fato.
+- **E-mail único case-insensitive no banco**, via collation não-determinística — não dá para cadastrar `Ana@x.com` e `ana@x.com` nem inserindo direto no Postgres.
+- **django-axes** bloqueia a combinação IP+usuário após 5 falhas (429 por 15 min). Ver a armadilha do `ATOMIC_REQUESTS` em [`docs/data-model.md`](docs/data-model.md#armadilhas-encontradas-na-implementação).

@@ -29,20 +29,34 @@ Chave do JSONB = `columns.key` — slug **imutável** gerado na criação da col
 
 ```sql
 -- =========================================================
--- accounts
+-- accounts                                    [implementado — Phase 1]
 -- =========================================================
+
+-- Comparação case-insensitive sem CITEXT: as classes CIText/CIEmailField do
+-- django.contrib.postgres foram REMOVIDAS no Django 5.1, e a substituição
+-- oficial é uma collation não-determinística.
+--   und-u-ks-level2 = ignora caixa, respeita acento.
+-- Criada em accounts/migrations/0001_initial.py via CreateCollation.
+CREATE COLLATION case_insensitive (
+    provider = icu, locale = 'und-u-ks-level2', deterministic = false
+);
+
 CREATE TABLE users (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    email         CITEXT       NOT NULL UNIQUE,      -- USERNAME_FIELD
+    email         VARCHAR(254) COLLATE case_insensitive NOT NULL UNIQUE,  -- USERNAME_FIELD
     name          VARCHAR(120) NOT NULL,
     password      VARCHAR(128) NOT NULL,             -- argon2id
     timezone      VARCHAR(64)  NOT NULL DEFAULT 'America/Sao_Paulo',
     is_active     BOOLEAN      NOT NULL DEFAULT TRUE,
     is_staff      BOOLEAN      NOT NULL DEFAULT FALSE,
+    is_superuser  BOOLEAN      NOT NULL DEFAULT FALSE,
     last_login    TIMESTAMPTZ,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     updated_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+-- O UNIQUE herda a collation da coluna: ana@x.com e Ana@X.com colidem no banco,
+-- não só no serializer. Coberto por
+-- test_duplicate_email_is_blocked_by_the_database_case_insensitively.
 
 -- =========================================================
 -- tables
@@ -160,7 +174,7 @@ erDiagram
 
     users {
         uuid id PK
-        citext email UK
+        varchar email UK "collation case-insensitive"
         varchar timezone
     }
     tables {
@@ -258,3 +272,25 @@ WHERE due_date BETWEEN :hoje - INTERVAL '30 days'
 | `records.position` (novo) | Ordenação manual (RF11) |
 | `alerts.due_date_snapshot` (novo) | Detectar alerta obsoleto após mudança de vencimento |
 | `alerts` ganha `rule_id` e `user_id` | Idempotência por regra + inbox indexado |
+| `users.email` usa collation não-determinística, não `CITEXT` | As classes `CIText*` saíram do Django em 5.1 |
+
+---
+
+## Armadilhas encontradas na implementação
+
+### `ATOMIC_REQUESTS` + DRF apagam o registro de tentativa do django-axes
+
+`ATOMIC_REQUESTS=True` (necessário para o `SET LOCAL app.user_id` da RLS) envolve
+a request numa transação. Ao tratar uma `APIException` — o 401 de senha errada —
+o `exception_handler` do DRF chama `set_rollback()`, revertendo **tudo** que a
+request escreveu, inclusive o `AccessAttempt` que o axes acabou de gravar.
+
+Sintoma: o log diz "Created new record in the database", o `count()` seguinte
+retorna 0, o contador de falhas nunca sai de zero e o bloqueio por força bruta
+**nunca dispara**. Falha silenciosa — nada quebra, a proteção só não existe.
+
+Correção: o endpoint de login roda sob `transaction.non_atomic_requests`
+(`accounts/urls.py`). É seguro porque é pré-autenticação — não há `app.user_id`
+para setar — e as únicas escritas são a tentativa do axes e o `last_login`.
+Regressão coberta por `test_failed_login_attempt_survives_the_request`, que
+precisa de `django_db(transaction=True)` para reproduzir a semântica real.

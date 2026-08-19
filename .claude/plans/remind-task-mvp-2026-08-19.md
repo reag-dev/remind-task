@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phase 0 concluída em 2026-08-19; Phases 1-9 pendentes
+**Status:** active — Phases 0-1 concluídas em 2026-08-19; Phases 2-9 pendentes
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -219,7 +219,7 @@ CREATE INDEX alerts_pending_idx ON alerts (status, trigger_date) WHERE status = 
 
 **Files Touched:** `accounts/models.py`, `accounts/managers.py`, `accounts/serializers.py`, `accounts/views.py`, `accounts/urls.py`, `accounts/tests/test_auth.py`, `config/settings/base.py`
 **Verify:** `pytest accounts/ -v`
-**Done When:** registro→login→refresh→logout passam; senha no banco começa com `argon2$`; 6ª tentativa errada retorna 403 (axes).
+**Done When:** registro→login→refresh→logout passam; senha no banco começa com `argon2$`; 6ª tentativa errada retorna 429 (axes 7 usa Too Many Requests, não 403).
 **Time:** 4h
 
 **Replanning triggers:**

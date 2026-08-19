@@ -4,6 +4,7 @@ Settings comuns a todos os ambientes.
 Nada aqui pode assumir DEBUG=True. Ajustes de ambiente ficam em dev.py / prod.py.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 from decouple import Csv, config
@@ -23,17 +24,22 @@ DJANGO_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # Necessário para a operação CreateCollation da migration accounts.0001.
+    "django.contrib.postgres",
 ]
 
 THIRD_PARTY_APPS = [
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",  # RS07: invalidação de refresh
     "django_filters",
     "corsheaders",
     "drf_spectacular",
+    "axes",  # RS03: rate limit de login
 ]
 
 LOCAL_APPS = [
     "core",
+    "accounts",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -47,6 +53,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # AxesMiddleware precisa vir DEPOIS do AuthenticationMiddleware.
+    "axes.middleware.AxesMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -103,8 +111,52 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
-# NOTA (Phase 1): AUTH_USER_MODEL = "accounts.User" entra aqui ANTES do primeiro
-# `migrate`. Trocar depois exige recriar o banco.
+AUTH_USER_MODEL = "accounts.User"
+
+# django-axes intercepta authenticate() e conta as falhas. O AxesStandaloneBackend
+# precisa vir PRIMEIRO: é ele que levanta PermissionDenied quando a conta está
+# bloqueada, antes do ModelBackend chegar a conferir a senha.
+AUTHENTICATION_BACKENDS = [
+    "axes.backends.AxesStandaloneBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+# ---------------------------------------------------------------- jwt (RS07)
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Rotação + blacklist: cada refresh emite um par novo e queima o anterior.
+    # Sem isso, um refresh token vazado vale 7 dias inteiros mesmo após logout.
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
+    "UPDATE_LAST_LOGIN": True,
+    "ALGORITHM": "HS256",
+    "SIGNING_KEY": SECRET_KEY,
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "USER_ID_FIELD": "id",
+    "USER_ID_CLAIM": "user_id",
+}
+
+# Refresh token vai em cookie httpOnly, nunca em localStorage nem no corpo da
+# resposta: JS da página não consegue lê-lo, o que tira o XSS do jogo.
+AUTH_COOKIE_NAME = "refresh_token"
+AUTH_COOKIE_SECURE = True  # dev.py sobrescreve para permitir http://localhost
+AUTH_COOKIE_HTTPONLY = True
+AUTH_COOKIE_SAMESITE = "Lax"
+AUTH_COOKIE_PATH = "/api/auth/"
+
+# ---------------------------------------------------------------- axes (RS03)
+
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = timedelta(minutes=15)
+# Bloqueia a combinação IP+usuário: não deixa um atacante trancar a conta alheia
+# só errando a senha dela de fora (DoS de conta), nem varrer contas de um só IP.
+AXES_LOCKOUT_PARAMETERS = [["ip_address", "username"]]
+AXES_RESET_ON_SUCCESS = True
+AXES_USERNAME_FORM_FIELD = "email"
+AXES_LOCKOUT_CALLABLE = None
+AXES_ENABLE_ADMIN = True
 
 # ---------------------------------------------------------------- i18n / tz
 
@@ -122,6 +174,8 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # Session fica só para a Browsable API e o Admin.
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
