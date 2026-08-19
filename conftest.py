@@ -1,5 +1,6 @@
 import pytest
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 PASSWORD = "Contrato!Vencendo#2026"
 
@@ -29,10 +30,64 @@ def other_user(db, django_user_model):
 
 
 @pytest.fixture
-def auth_client(api_client, user):
-    """Client autenticado via JWT — o mesmo caminho que o frontend usaria."""
-    from rest_framework_simplejwt.tokens import RefreshToken
+def authenticate():
+    """
+    Fábrica de clients autenticados por JWT.
 
-    access = RefreshToken.for_user(user).access_token
-    api_client.credentials(HTTP_AUTHORIZATION=f"Bearer {access}")
-    return api_client
+    Fábrica, e não fixture direta, porque os testes de isolamento (RS01) precisam
+    de DOIS clients independentes na mesma execução.
+    """
+
+    def _make(user):
+        client = APIClient()
+        client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(user).access_token}"
+        )
+        return client
+
+    return _make
+
+
+@pytest.fixture
+def auth_client(authenticate, user):
+    return authenticate(user)
+
+
+@pytest.fixture
+def other_client(authenticate, other_user):
+    return authenticate(other_user)
+
+
+# ---------------------------------------------------------------- tabelas
+
+
+@pytest.fixture
+def table(db, user):
+    from tables.models import Table
+
+    return Table.objects.create(user=user, name="Contratos", alert_lead_days=3)
+
+
+@pytest.fixture
+def other_table(db, other_user):
+    from tables.models import Table
+
+    return Table.objects.create(user=other_user, name="Licenças")
+
+
+@pytest.fixture
+def columns(db, table):
+    """Estrutura do exemplo da seção 7 da especificação."""
+    from tables.models import Column, ColumnType
+
+    specs = [
+        ("Cliente", ColumnType.TEXT, {}),
+        ("Contrato", ColumnType.TEXT, {"is_required": True}),
+        ("Responsável", ColumnType.TEXT, {"is_sensitive": True}),
+        ("Data de vencimento", ColumnType.DUE_DATE, {"is_required": True}),
+        ("Status", ColumnType.SELECT, {"options": ["Ativo", "Encerrado"]}),
+    ]
+    return [
+        Column.objects.create(table=table, name=name, type=type_, position=i, **extra)
+        for i, (name, type_, extra) in enumerate(specs)
+    ]

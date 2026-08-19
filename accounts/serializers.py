@@ -49,6 +49,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         return User.objects.create_user(password=password, **validated_data)
 
 
+class AccessTokenSerializer(serializers.Serializer):
+    """Corpo de /auth/refresh/. O refresh rotacionado sai só no cookie."""
+
+    access = serializers.CharField(read_only=True)
+
+
 class LoginSerializer(TokenObtainPairSerializer):
     """Adiciona o usuário ao corpo da resposta de login."""
 

@@ -75,13 +75,13 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–1 concluídas** — infraestrutura local e autenticação.
+**Phases 0–2 concluídas** — infraestrutura, autenticação e estrutura dinâmica das tabelas.
 
 | Phase | Escopo | Status |
 |---|---|---|
 | 0 | Scaffold, Docker Compose, health check | ✅ |
 | 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
-| 2 | `tables` — tabelas e colunas dinâmicas | ⬜ |
+| 2 | `tables` — tabelas e colunas dinâmicas | ✅ |
 | 3 | `records` — registros JSONB validados | ⬜ |
 | 4 | Status e ordenação por vencimento | ⬜ |
 | 5 | `alerts` — regras, job Celery, inbox | ⬜ |
@@ -100,6 +100,13 @@ Não há frontend. A interface do MVP é:
 | `POST` | `/api/auth/refresh/` | Renova o access, rotaciona o refresh |
 | `POST` | `/api/auth/logout/` | Blacklist do refresh + limpa cookie |
 | `GET`/`PATCH` | `/api/auth/me/` | Conta autenticada (nome, fuso) |
+| `GET`/`POST` | `/api/tables/` | Lista e cria tabelas (RF03, RF04) |
+| `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/` | Detalhe com colunas embutidas |
+| `GET`/`POST` | `/api/tables/{id}/columns/` | Colunas da tabela (RF05, RF06) |
+| `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/columns/{col}/` | Uma coluna |
+| `PATCH` | `/api/tables/{id}/columns/reorder/` | Reordena todas as colunas de uma vez |
+
+Tipos de coluna: `text`, `number`, `date`, `datetime`, `boolean`, `email`, `select`, `due_date`.
 
 Exemplo:
 
@@ -120,3 +127,14 @@ curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
 - **Rotação + blacklist** de refresh: cada renovação queima o token anterior, e o logout invalida de fato.
 - **E-mail único case-insensitive no banco**, via collation não-determinística — não dá para cadastrar `Ana@x.com` e `ana@x.com` nem inserindo direto no Postgres.
 - **django-axes** bloqueia a combinação IP+usuário após 5 falhas (429 por 15 min). Ver a armadilha do `ATOMIC_REQUESTS` em [`docs/data-model.md`](docs/data-model.md#armadilhas-encontradas-na-implementação).
+- **Recurso alheio responde 404, nunca 403** — 403 confirmaria que o recurso existe e entregaria informação a quem sonda ids (RS04). Vale também para coleções aninhadas: as colunas de uma tabela que não é sua não existem.
+- **O dono vem sempre do token**, nunca do corpo da requisição. Mandar `user` no payload de criação de tabela não muda nada.
+
+### Regras estruturais garantidas pelo banco
+
+Não só pelo serializer — os testes provam cada uma passando por cima da API:
+
+- No máximo **uma coluna `due_date` por tabela** (índice único parcial, RF06).
+- **Nome de tabela único por usuário** — dois usuários podem ter tabelas homônimas.
+- **`key` de coluna única por tabela**, gerada por slug do rótulo com sufixo em colisão.
+- **Posição única por tabela**, com constraint `DEFERRABLE INITIALLY DEFERRED` — é o que permite ao reorder permutar tudo numa transação, passando por estados temporariamente duplicados.

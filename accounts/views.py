@@ -13,7 +13,12 @@ from accounts.cookies import (
     read_refresh_token,
     set_refresh_cookie,
 )
-from accounts.serializers import LoginSerializer, RegisterSerializer, UserSerializer
+from accounts.serializers import (
+    AccessTokenSerializer,
+    LoginSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
 
 
 @extend_schema(tags=["auth"], summary="Cadastro de usuário (RF01)")
@@ -50,6 +55,7 @@ class LoginView(TokenObtainPairView):
         "token antigo vai para a blacklist e um novo é gravado no cookie."
     ),
     request=None,
+    responses={200: AccessTokenSerializer},
 )
 class RefreshView(APIView):
     permission_classes = [AllowAny]

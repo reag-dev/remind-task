@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-1 concluídas em 2026-08-19; Phases 2-9 pendentes
+**Status:** active — Phases 0-2 concluídas em 2026-08-19; Phases 3-9 pendentes
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -46,6 +46,12 @@ A especificação sugere `RecordValue(record_id, column_id, value)` — EAV clá
 Chave do JSONB = `columns.key` (slug **imutável** gerado na criação da coluna), não `columns.id` e não `columns.name`. Assim renomear a coluna (RF05) não reescreve nenhum registro, e o payload continua legível.
 
 ### DDL conceitual
+
+> **Este bloco é o desenho original, preservado como registro.** O schema vigente
+> mora em [`docs/data-model.md`](../../docs/data-model.md) e já diverge daqui em
+> dois pontos, ambos justificados lá: `users.email` usa collation
+> não-determinística em vez de `CITEXT` (as classes `CIText*` saíram do Django em
+> 5.1) e `columns.type` é varchar + CHECK em vez de ENUM nativo.
 
 ```sql
 -- =========================================================
@@ -235,12 +241,16 @@ CREATE INDEX alerts_pending_idx ON alerts (status, trigger_date) WHERE status = 
 2. Geração do `key` no `Column.save()` a partir de `name` (slugify + sufixo numérico em colisão); **imutável** após criação — serializer rejeita alteração.
 3. `TableViewSet` e `ColumnViewSet` aninhado em `/api/tables/{table_id}/columns/`, com `get_queryset()` **sempre** filtrado por `self.request.user`.
 4. `PATCH /api/tables/{id}/columns/reorder/` para `position` em lote (constraint DEFERRABLE permite a permutação numa transação).
-5. Exclusão de coluna remove a definição **e** faz purge da chave nos registros: `UPDATE records SET data = data - :key WHERE table_id = :id`.
+5. ~~Exclusão de coluna faz purge da chave nos registros.~~ **ADIADO PARA A PHASE 3** — a tabela `records` só existe lá. Ver "Dívida carregada" abaixo.
 
 **Files Touched:** `tables/models.py`, `tables/serializers.py`, `tables/views.py`, `tables/urls.py`, `tables/tests/test_tables.py`, `tables/tests/test_columns.py`
 **Verify:** `pytest tables/ -v`
-**Done When:** criar 2ª coluna `due_date` na mesma tabela → 400; `GET /api/tables/{id_de_outro_user}/` → 404; reorder persiste; excluir coluna limpa a chave dos registros.
+**Done When:** criar 2ª coluna `due_date` na mesma tabela → 400; `GET /api/tables/{id_de_outro_user}/` → 404; reorder persiste.
 **Time:** 5h
+
+**Dívida carregada para a Phase 3:**
+- `UPDATE records SET data = data - :key WHERE table_id = :id` ao excluir uma coluna. Sem isso o JSONB acumula chaves órfãs, que reaparecem no CSV (RF13) e inflam o índice GIN. Entra como `perform_destroy` no `ColumnViewSet` assim que o model `Record` existir, com teste.
+- Decisão tomada aqui e que a Phase 3 herda: `type` de coluna é **imutável**. Alterar o tipo deixaria registros já gravados com valores que não passam mais na validação — corrupção silenciosa. Para trocar, apague e recrie a coluna.
 
 **Replanning triggers:**
 - Se o `UniqueConstraint` parcial conflitar com o reorder → `bulk_update` dentro de `transaction.atomic` com `SET CONSTRAINTS ALL DEFERRED`.

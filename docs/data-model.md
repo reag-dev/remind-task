@@ -75,18 +75,23 @@ CREATE TABLE tables (
 CREATE INDEX tables_user_created_idx ON tables (user_id, created_at DESC);
 
 -- =========================================================
--- columns
+-- columns                                     [implementado — Phase 2]
 -- =========================================================
-CREATE TYPE column_type AS ENUM (
-    'text','number','date','datetime','boolean','email','select','due_date'
-);
+
+-- `type` é varchar + CHECK, NÃO um ENUM nativo do Postgres.
+-- Acrescentar um tipo novo (RF05 prevê evolução) aqui é uma migration de
+-- constraint comum. Num ENUM nativo seria `ALTER TYPE ... ADD VALUE`, que não
+-- roda dentro de transação e não tem reversão — migration irreversível por um
+-- ganho de bytes que não faz falta.
 
 CREATE TABLE columns (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     table_id     UUID NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
     key          VARCHAR(64) NOT NULL,            -- slug IMUTÁVEL; chave em records.data
     name         VARCHAR(80) NOT NULL,            -- rótulo mutável
-    type         column_type NOT NULL,
+    type         VARCHAR(16) NOT NULL
+                   CHECK (type IN ('text','number','date','datetime',
+                                   'boolean','email','select','due_date')),
     position     SMALLINT NOT NULL,
     is_required  BOOLEAN NOT NULL DEFAULT FALSE,
     is_sensitive BOOLEAN NOT NULL DEFAULT FALSE,  -- RS05
@@ -104,7 +109,7 @@ CREATE UNIQUE INDEX columns_one_due_date_per_table
 -- =========================================================
 -- records
 -- =========================================================
-CREATE TABLE records (
+CREATE TABLE records (                       -- [pendente — Phase 3]
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     table_id    UUID NOT NULL REFERENCES tables(id) ON DELETE CASCADE,
     user_id     UUID NOT NULL REFERENCES users(id)  ON DELETE CASCADE,  -- nota 1
@@ -273,6 +278,9 @@ WHERE due_date BETWEEN :hoje - INTERVAL '30 days'
 | `alerts.due_date_snapshot` (novo) | Detectar alerta obsoleto após mudança de vencimento |
 | `alerts` ganha `rule_id` e `user_id` | Idempotência por regra + inbox indexado |
 | `users.email` usa collation não-determinística, não `CITEXT` | As classes `CIText*` saíram do Django em 5.1 |
+| `columns.type` é varchar + CHECK, não ENUM nativo | `ALTER TYPE ... ADD VALUE` não roda em transação nem reverte |
+| `columns.key` é gerado e **imutável**; `columns.type` também é imutável | Renomear não pode reescrever registros; trocar o tipo corromperia valores já gravados |
+| `columns.position` só muda pelo endpoint de reorder | PATCH isolado em uma posição colidiria com outra coluna |
 
 ---
 
