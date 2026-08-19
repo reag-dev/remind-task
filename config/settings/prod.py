@@ -1,0 +1,21 @@
+from .base import *  # noqa: F403
+
+DEBUG = False
+
+# RS06 — comunicação segura. Detalhado na Phase 7.
+SECURE_SSL_REDIRECT = True
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SECURE_HSTS_SECONDS = 31_536_000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SESSION_COOKIE_SECURE = True
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+CSRF_COOKIE_SECURE = True
+X_FRAME_OPTIONS = "DENY"
+
+# Sem browsable API em produção: só JSON.
+REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (  # noqa: F405
+    "rest_framework.renderers.JSONRenderer",
+)

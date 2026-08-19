@@ -1,0 +1,7 @@
+# O código roda em container Linux mas é editado no Windows.
+# Normaliza tudo para LF no repositório e no working copy.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary

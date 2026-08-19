@@ -1,0 +1,23 @@
+# Runtime deps — remind-task
+# Faixas compatíveis em vez de pin exato: lockfile entra quando o projeto estabilizar.
+
+Django>=5.1,<6.0
+djangorestframework>=3.15,<4.0
+djangorestframework-simplejwt>=5.3,<6.0
+django-cors-headers>=4.4,<5.0
+django-filter>=24.3
+django-axes>=7.0,<8.0
+
+# Argon2id — o doc de stack cita "django-argon2", que não existe no PyPI.
+# O hasher Argon2PasswordHasher do Django depende deste pacote.
+argon2-cffi>=23.1
+
+celery>=5.4,<6.0
+redis>=5.0,<7.0
+
+# psycopg 3 (não psycopg2): suportado nativamente pelo Django 5 e mais rápido.
+psycopg[binary]>=3.2,<4.0
+
+python-decouple>=3.8
+drf-spectacular>=0.27,<1.0
+gunicorn>=23.0

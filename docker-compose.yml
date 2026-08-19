@@ -1,0 +1,63 @@
+name: remind-task
+
+x-django: &django
+  build: .
+  env_file: .env
+  volumes:
+    - .:/app
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-remind}
+      POSTGRES_USER: ${POSTGRES_USER:-remind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-remind}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-remind} -d ${POSTGRES_DB:-remind}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    <<: *django
+    command: python manage.py runserver 0.0.0.0:8000
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  worker:
+    <<: *django
+    command: celery -A config worker -l info
+
+  beat:
+    <<: *django
+    command: celery -A config beat -l info
+
+volumes:
+  pgdata:
