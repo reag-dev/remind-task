@@ -322,8 +322,38 @@ Execution Time: 1.644 ms
 O índice parcial (`WHERE due_date IS NOT NULL`) resolve o filtro tocando **2
 buffers**. Registros sem vencimento nem entram no índice.
 
-Reproduzir: gerar registros e rodar os dois `EXPLAIN` — o comando está no
-histórico do commit da Phase 3.
+### RF10 — por que o filtro de status não usa a anotação
+
+`?status=overdue` poderia ser `filter(due_status="overdue")` sobre a anotação.
+Funciona, e é lento. Mesmos 20.000 registros:
+
+```
+-- Filtrando pela FAIXA DE DATAS (implementado, status_filter_q)
+Bitmap Heap Scan on records  (actual time=1.156..5.498 rows=5161)
+  Recheck Cond: (due_date < '2026-08-19'::date)
+
+-- Filtrando pela ANOTAÇÃO (descartado)
+Nested Loop  (actual time=0.075..15.573 rows=5161)
+  Join Filter: (CASE WHEN due_date IS NULL THEN 'no_due' WHEN ... END = 'overdue')
+  Rows Removed by Join Filter: 14839
+  (cost estimate: rows=100  |  actual: rows=5161)
+```
+
+Dois problemas na versão com anotação:
+
+1. **`Rows Removed by Join Filter: 14839`** — junta com `tables`, avalia o `CASE`
+   nas 20.000 linhas e descarta 74% delas. O índice em `due_date` não participa.
+2. **Estimativa 50× errada** (100 previstas, 5161 reais). O planejador não sabe
+   estimar seletividade de um `CASE`. Isso é pior que a lentidão em si: escolhas
+   ruins de plano se propagam para qualquer join ou ordenação acima.
+
+Traduzir cada status para comparação direta em `due_date` devolve o filtro ao
+índice. O preço é uma **terceira** escrita da mesma regra — coberta por
+`test_filter_predicates_match_the_annotation`, que confronta os dois conjuntos
+para cada status e cada valor de `alert_lead_days`.
+
+Reproduzir: gerar registros e rodar os `EXPLAIN` — os comandos estão no
+histórico dos commits das Phases 3 e 4.
 
 ---
 

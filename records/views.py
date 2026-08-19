@@ -1,15 +1,37 @@
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema, extend_schema_view
+
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import viewsets
 from rest_framework.permissions import IsAuthenticated
 
+from core.dates import user_today
+from records.filters import NullsLastOrderingFilter, RecordFilter, RecordFilterBackend
 from records.models import Record
 from records.serializers import RecordSerializer
+from records.status import DueStatus
 from tables.models import Table
+
+ORDERING_DESCRIPTION = (
+    "Campo de ordenação. Prefixo `-` inverte. Valores aceitos: "
+    "`due_date`, `created_at`, `updated_at`, `position`. "
+    "NULL sempre por último. Padrão: `due_date,created_at`, que já produz a "
+    "ordem do RF11 — vencidos, hoje, próximos, futuros, sem vencimento."
+)
 
 
 @extend_schema_view(
-    list=extend_schema(tags=["records"], summary="Lista os registros da tabela"),
+    list=extend_schema(
+        tags=["records"],
+        summary="Lista os registros da tabela (RF10, RF11)",
+        parameters=[
+            OpenApiParameter(
+                "status",
+                description="Filtra por status, separados por vírgula. Ex.: `overdue,due_today`.",
+                enum=DueStatus.values,
+            ),
+            OpenApiParameter("ordering", description=ORDERING_DESCRIPTION),
+        ],
+    ),
     retrieve=extend_schema(tags=["records"], summary="Detalha um registro"),
     create=extend_schema(tags=["records"], summary="Insere um registro (RF07)"),
     update=extend_schema(tags=["records"], summary="Substitui um registro (RF08)"),
@@ -19,6 +41,13 @@ from tables.models import Table
 class RecordViewSet(viewsets.ModelViewSet):
     serializer_class = RecordSerializer
     permission_classes = [IsAuthenticated]
+
+    filter_backends = [RecordFilterBackend, NullsLastOrderingFilter]
+    filterset_class = RecordFilter
+    ordering_fields = ["due_date", "created_at", "updated_at", "position"]
+    # RF11: `due_date` ASC com NULL por último já entrega vencidos (mais antigo
+    # primeiro) → hoje → próximos → futuros → sem data. Um índice resolve.
+    ordering = ["due_date", "created_at"]
 
     def get_table(self) -> Table:
         if not hasattr(self, "_table"):
@@ -39,7 +68,9 @@ class RecordViewSet(viewsets.ModelViewSet):
         return (
             Record.objects.filter(table=self.get_table(), user=self.request.user)
             .select_related("table")
-            .order_by("due_date", "created_at")
+            # Anotado ANTES dos filter backends: é o que permite `?status=` e
+            # `?ordering=` operarem sobre o status calculado.
+            .with_due_status(user_today(self.request.user))
         )
 
     def get_serializer_context(self):
@@ -52,4 +83,7 @@ class RecordViewSet(viewsets.ModelViewSet):
         # Uma query só para as colunas, reaproveitada por todos os registros da
         # página — sem isso a validação faria N+1 num POST em lote.
         context["columns"] = list(table.columns.all())
+        # "Hoje" resolvido uma vez por request: garante que todos os registros da
+        # página sejam avaliados contra a mesma data, mesmo virando o dia no meio.
+        context["today"] = user_today(self.request.user)
         return context

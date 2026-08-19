@@ -7,12 +7,58 @@ from django.db.models import Q
 from django.db.models.expressions import RawSQL
 
 from core.models import TimeStampedUUIDModel
+from records.status import DueStatus
 from tables.models import Table
+
+
+class DateDiffDays(models.Func):
+    """
+    `data_a - data_b` como INTEGER, que é o comportamento nativo do Postgres.
+
+    Não dá para usar `F("due_date") - Value(today)`: o ORM reconhece subtração
+    entre temporais e gera `interval '1 day' * (a - b)`, devolvendo um interval.
+    Comparar isso com `alert_lead_days` (integer) estoura com
+    `operator does not exist: interval < integer`.
+    """
+
+    arg_joiner = " - "
+    template = "(%(expressions)s)"
+    output_field = models.IntegerField()
 
 
 class RecordQuerySet(models.QuerySet):
     def for_user(self, user):
         return self.filter(user=user)
+
+    def with_due_status(self, today: date):
+        """
+        Anota `days_until_due` e `due_status` (RF10).
+
+        Calculado, nunca persistido: um status gravado ficaria obsoleto sozinho à
+        meia-noite, e teria de ser reescrito em todas as linhas todo dia.
+
+        Espelha `records.status.due_status_for`. As duas implementações são
+        conferidas por test_sql_and_python_agree_on_every_status.
+        """
+        return self.annotate(
+            days_until_due=DateDiffDays(
+                models.F("due_date"),
+                models.Value(today, output_field=models.DateField()),
+            )
+        ).annotate(
+            due_status=models.Case(
+                models.When(due_date__isnull=True, then=models.Value(DueStatus.NO_DUE)),
+                models.When(days_until_due__lt=0, then=models.Value(DueStatus.OVERDUE)),
+                models.When(days_until_due=0, then=models.Value(DueStatus.DUE_TODAY)),
+                # O limiar de "próximo" é por tabela (RF10 diz configurável).
+                models.When(
+                    days_until_due__lte=models.F("table__alert_lead_days"),
+                    then=models.Value(DueStatus.DUE_SOON),
+                ),
+                default=models.Value(DueStatus.ON_TRACK),
+                output_field=models.CharField(),
+            )
+        )
 
     def purge_column_key(self, *, table_id, key: str, was_due_date: bool) -> int:
         """

@@ -75,7 +75,7 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–3 concluídas** — infraestrutura, autenticação, estrutura dinâmica e registros.
+**Phases 0–4 concluídas** — infraestrutura, autenticação, estrutura dinâmica, registros e controle de vencimento.
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -83,7 +83,7 @@ Não há frontend. A interface do MVP é:
 | 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
 | 2 | `tables` — tabelas e colunas dinâmicas | ✅ |
 | 3 | `records` — registros JSONB validados | ✅ |
-| 4 | Status e ordenação por vencimento | ⬜ |
+| 4 | Status e ordenação por vencimento | ✅ |
 | 5 | `alerts` — regras, job Celery, inbox | ⬜ |
 | 6 | `exports` — CSV seguro | ⬜ |
 | 7 | Row-Level Security e endurecimento | ⬜ |
@@ -127,6 +127,30 @@ curl -X POST http://localhost:8000/api/tables/$T/records/ \
 - **`PATCH` mescla com o estado atual** antes de validar — é o que permite recusar um PATCH que esvazia um campo obrigatório. Olhando só o delta, isso passaria.
 - **`due_date` é promovida** de `data[<coluna due_date>]` para uma coluna real no `save()`. É somente leitura na API: mandá-la no corpo não a faz divergir do JSONB.
 - **Excluir uma coluna limpa a chave dela** em todos os registros — e zera o `due_date` promovido se era a coluna de vencimento.
+
+### Vencimento: status, ordem e filtros
+
+```
+GET /api/tables/{id}/records/?status=overdue,due_today&ordering=-due_date
+```
+
+Cada registro volta com `due_status` e `days_until_due`:
+
+| Status | Quando |
+|---|---|
+| `overdue` | vencimento já passou |
+| `due_today` | vence hoje |
+| `due_soon` | dentro de `alert_lead_days` da tabela |
+| `on_track` | ainda distante |
+| `no_due` | sem data de vencimento |
+
+**"Hoje" é a data no fuso do usuário** (`users.timezone`), nunca a do servidor. Dois usuários olhando o mesmo vencimento em fusos diferentes veem status diferentes — e é isso que está certo. Tem teste com o relógio congelado em 02:00 UTC, quando Tóquio já virou o dia e São Paulo não.
+
+O status **não é armazenado**: um valor gravado ficaria errado sozinho à meia-noite e exigiria reescrever todas as linhas todo dia.
+
+**Ordenação padrão sai de um único `ORDER BY due_date ASC` com NULL por último** — que já produz exatamente a prioridade do RF11: vencidos (mais antigo primeiro), hoje, próximos, futuros, sem data. Nenhuma lógica de status participa da ordenação. `?ordering=` aceita `due_date`, `created_at`, `updated_at` e `position`, com `-` para inverter e NULL sempre no fim.
+
+Filtros: `?status=`, `?due_before=`, `?due_after=`, `?has_due_date=`. Status inexistente devolve **400**, não lista vazia — senão o cliente concluiria "não há registros" quando na verdade errou o filtro.
 
 Exemplo:
 
