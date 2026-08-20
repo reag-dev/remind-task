@@ -252,7 +252,7 @@ curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
 - **Recurso alheio responde 404, nunca 403** — 403 confirmaria que o recurso existe e entregaria informação a quem sonda ids (RS04). Vale também para coleções aninhadas: as colunas de uma tabela que não é sua não existem.
 - **O dono vem sempre do token**, nunca do corpo da requisição. Mandar `user` no payload de criação de tabela não muda nada.
 - **Row-Level Security no Postgres** como segunda barreira — detalhado abaixo.
-- **Log redigido na origem**: credenciais, JWTs, hashes de senha e o `data` inteiro dos registros são apagados por um `logging.Filter` antes de qualquer handler formatar a linha (`core/logging.py`).
+- **Log redigido na origem**: credenciais, JWTs, hashes de senha e o `data` inteiro dos registros são apagados por um `logging.Filter` antes de qualquer handler formatar a linha (`core/logging.py`) — **inclusive dentro do traceback**, que é por onde o Postgres devolve a linha inteira que violou uma constraint.
 - **Headers de produção conferidos**: `python manage.py check --deploy --settings=config.settings.prod` passa sem nenhuma issue. `DJANGO_ALLOWED_HOSTS` vazio derruba o boot em vez de virar um 400 misterioso.
 
 ### Isolamento em duas camadas (RS01)

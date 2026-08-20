@@ -216,3 +216,34 @@ def test_the_connection_is_not_left_downgraded_after_a_request(auth_client, tabl
 
     assert role != rls.RUNTIME_ROLE
     assert not guc
+
+
+def test_the_owner_is_not_subject_to_the_policies(record):
+    """
+    `FORCE ROW LEVEL SECURITY` fica DESLIGADO — decisão da migration 0002.
+
+    Com FORCE, as policies valem também para o dono da tabela. Em produção, onde
+    o dono não é superusuário, isso apagaria o Django Admin (lista zero linhas),
+    quebraria a exclusão de usuário na cascata e faria data migrations rodarem
+    contra zero linhas reportando sucesso — três falhas silenciosas.
+
+    O isolamento do runtime não depende disso: `remind_app` não é dono, então as
+    policies valem para ele de qualquer jeito. É o que o primeiro teste deste
+    arquivo confere.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT relname, relrowsecurity, relforcerowsecurity
+            FROM pg_class
+            WHERE relnamespace = 'public'::regnamespace
+              AND relname IN ('tables', 'columns', 'records', 'alert_rules', 'alerts')
+            ORDER BY relname
+            """
+        )
+        estado = cursor.fetchall()
+
+    assert len(estado) == 5
+    for relname, enabled, forced in estado:
+        assert enabled, f"{relname} está sem RLS"
+        assert not forced, f"{relname} está com FORCE — ver migration 0002"

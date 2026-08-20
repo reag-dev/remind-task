@@ -280,3 +280,29 @@ def test_me_cannot_change_email(auth_client, user):
 
     user.refresh_from_db()
     assert user.email == "ana@example.com"
+
+
+@real_transaction
+def test_login_works_with_a_stale_bearer_token_in_the_header(user, authenticate):
+    """
+    Fixa uma dependência que não é óbvia olhando para `LoginView`.
+
+    O login roda fora do `ATOMIC_REQUESTS` (ver `accounts/urls.py`). Se as
+    classes de autenticação padrão rodassem aqui, elas reconheceriam o token do
+    header e tentariam entrar no contexto de RLS sem transação aberta — que
+    `core.rls.enter` recusa de propósito, e o relogin viraria 500.
+
+    Não roda hoje porque `TokenViewBase` do SimpleJWT já define
+    `authentication_classes = ()`. Este teste existe para o dia em que alguém
+    trocar a classe base ou declarar autenticadores na view.
+
+    Precisa de `transaction=True`: com o wrapper padrão do pytest-django a
+    request roda dentro de um atomic block que NÃO existe em produção, e o
+    cenário não acontece.
+    """
+    stale = authenticate(user)
+
+    response = stale.post(LOGIN, {"email": user.email, "password": STRONG}, format="json")
+
+    assert response.status_code == 200
+    assert "access" in response.data

@@ -1,3 +1,4 @@
+from decouple import Csv, config
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
@@ -34,9 +35,32 @@ if not ALLOWED_HOSTS:  # noqa: F405
         "DJANGO_ALLOWED_HOSTS é obrigatório em produção."
     )
 
-# Origem confiável para POST com CSRF atrás de proxy HTTPS — o Django exige o
-# esquema aqui, diferente de ALLOWED_HOSTS.
-CSRF_TRUSTED_ORIGINS = [f"https://{host}" for host in ALLOWED_HOSTS if "*" not in host]  # noqa: F405
+
+def _csrf_origin(host: str) -> str | None:
+    """
+    Traduz uma entrada de ALLOWED_HOSTS para a sintaxe de CSRF_TRUSTED_ORIGINS.
+
+    As duas listas não usam a mesma notação, e a diferença é silenciosa: uma
+    origem malformada não é recusada no boot — ela só nunca casa, e o POST vira
+    403 sem explicação.
+
+        example.com    ->  https://example.com
+        .example.com   ->  https://*.example.com   (o ponto é o curinga de ALLOWED_HOSTS)
+        *.example.com  ->  https://*.example.com   (já é a notação do CSRF)
+        *              ->  descartado — "qualquer origem" não é config de produção
+    """
+    if host == "*":
+        return None
+    if host.startswith("."):
+        return f"https://*{host}"
+    return f"https://{host}"
+
+
+# Derivar de ALLOWED_HOSTS cobre o caso comum (mesmo domínio, atrás de proxy
+# HTTPS). Quem tem front em outro domínio informa a lista explicitamente.
+CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv()) or [
+    origin for origin in map(_csrf_origin, ALLOWED_HOSTS) if origin  # noqa: F405
+]
 
 # Não vaza a URL interna (que carrega ids) para sites de terceiros.
 SECURE_REFERRER_POLICY = "same-origin"

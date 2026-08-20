@@ -13,6 +13,9 @@ O que é apagado
 - Hashes de senha (`argon2$...`, `pbkdf2_sha256$...`) e JWTs (`eyJ....`).
 - Cabeçalhos `Authorization: Bearer ...`.
 - O `data` dos registros, **inteiro**.
+- O `DETAIL:` de erro do Postgres, que devolve a LINHA inteira que violou a
+  constraint — JSONB e tudo.
+- Tudo isso também dentro do **traceback**, não só na mensagem.
 
 Por que o `data` inteiro: é ali dentro que mora o valor de uma coluna marcada
 `is_sensitive`, e o filtro de log não tem como saber quais chaves de qual tabela
@@ -24,6 +27,7 @@ banco dentro do logger. O rótulo que aparece nas notificações já é montado 
 
 import logging
 import re
+import traceback
 
 MASK = "[REDIGIDO]"
 
@@ -47,6 +51,18 @@ _PATTERNS = (
         ),
         rf"\1\2{MASK}\2",
     ),
+    # `DETAIL:  Failing row contains (uuid, {"cliente": ..., "cpf": ...}, ...)`
+    # — o Postgres devolve a linha INTEIRA quando uma constraint falha, e o
+    # psycopg carrega isso na mensagem da exceção. O `.` do regex não casa com
+    # newline, então a redação para no fim da linha.
+    #
+    # O prefixo `DETAIL:` não entra no padrão: a frase já é específica o
+    # bastante, e exigir o prefixo deixaria passar qualquer lugar que repasse só
+    # o trecho — que é justamente o que uma mensagem de erro reescrita faz.
+    (re.compile(r"(?i)(Failing row contains\s*)\(.*"), rf"\1{MASK}"),
+    # `DETAIL:  Key (record_id, rule_id, trigger_date)=(...) already exists.`
+    # Os NOMES das colunas ficam — são o que serve ao diagnóstico. Os valores saem.
+    (re.compile(r"(?i)(Key\s*\([^)]*\)\s*=\s*)\(.*"), rf"\1{MASK}"),
 )
 
 
@@ -69,18 +85,56 @@ def scrub(value):
 
 class RedactingFilter(logging.Filter):
     """
-    Aplica `scrub` na mensagem e nos argumentos antes da formatação.
+    Redige mensagem, argumentos e traceback antes de qualquer handler formatar.
 
-    É um Filter e não um Formatter de propósito: filtros rodam antes de o
-    handler formatar, então a redação vale para qualquer formato de saída
-    (texto, JSON, o que vier depois) e também para os handlers que outra pessoa
+    É um Filter e não um Formatter de propósito: filtros rodam antes da
+    formatação, então a redação vale para qualquer formato de saída (texto,
+    JSON, o que vier depois) e também para os handlers que outra pessoa
     acrescentar mais tarde.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.msg = scrub(record.msg)
-
         if record.args:
+            # Ordem obrigatória: redigir os argumentos com a estrutura ainda de
+            # pé (é o que permite apagar o `data` de um dict inteiro),
+            # RENDERIZAR, e só então passar o regex no texto final.
+            #
+            # Redigir `record.msg` antes da formatação apagaria os próprios
+            # placeholders: `logger.info("token=%s", jti)` viraria
+            # `"token=[REDIGIDO]"` com um argumento sobrando, e o `getMessage()`
+            # do handler estouraria com `TypeError: not all arguments converted`.
+            # O logging engole esse erro em `handleError` — a linha que deveria
+            # ser redigida simplesmente não apareceria.
             record.args = scrub(record.args)
+            record.msg = scrub(record.getMessage())
+            # Já renderizado: zerar evita que o handler tente formatar de novo.
+            # Custo assumido: um handler estruturado perde os args separados.
+            record.args = None
+        else:
+            record.msg = scrub(record.msg)
 
+        self._scrub_traceback(record)
         return True
+
+    @staticmethod
+    def _scrub_traceback(record: logging.LogRecord) -> None:
+        """
+        O traceback é o caminho mais provável de vazamento.
+
+        Um `IntegrityError` em `records` faz o psycopg devolver
+        `DETAIL: Failing row contains (…)` com o JSONB inteiro dentro, colunas
+        `is_sensitive` incluídas. O Django loga isso em `django.request` com
+        `exc_info`, e o Formatter renderiza a exceção DEPOIS do filtro — fora do
+        alcance de qualquer coisa feita em `record.msg`.
+
+        A saída é preencher `record.exc_text` na frente: o `Formatter` usa o
+        valor já pronto e não chama `formatException` de novo.
+        """
+        if record.exc_info and record.exc_info[0] is not None:
+            rendered = "".join(traceback.format_exception(*record.exc_info))
+            record.exc_text = scrub(rendered)
+        elif record.exc_text:
+            record.exc_text = scrub(record.exc_text)
+
+        if record.stack_info:
+            record.stack_info = scrub(record.stack_info)

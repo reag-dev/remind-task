@@ -5,11 +5,9 @@ Cria o papel de runtime `remind_app` e liga as policies de dono nas cinco
 tabelas de domínio. A explicação de como o runtime entra nesse papel está em
 `core/rls.py`; aqui fica só o DDL.
 
-Nota sobre `FORCE ROW LEVEL SECURITY`: sem ele o DONO da tabela ignora as
-policies em silêncio. Com ele, um `migrate` futuro que mexa em LINHAS (uma data
-migration) rodando como dono não-superusuário também será filtrado — se isso
-acontecer, a migration precisa de `SET LOCAL row_security = off` explícito, o
-que é justamente o tipo de decisão que deve ser consciente e não acidental.
+Nota sobre `FORCE ROW LEVEL SECURITY`: esta migration liga, e a 0002 desliga.
+O histórico ficou assim de propósito — o motivo está escrito lá, e é o tipo de
+decisão que não deve sumir num rebase.
 """
 
 from django.db import migrations

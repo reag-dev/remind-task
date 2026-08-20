@@ -288,9 +288,36 @@ Por que assim:
   conexão persistente (`CONN_MAX_AGE`) nunca carrega o usuário de uma request
   para a seguinte — o mesmo objetivo do desenho original, por outro caminho.
 
-`FORCE ROW LEVEL SECURITY` fica ligado assim mesmo. Hoje ele é inócuo (o dono é
-superusuário, e superusuário ignora RLS de qualquer jeito); em produção, onde o
-dono não deve ser superusuário, é ele que impede o dono de furar as policies.
+`FORCE ROW LEVEL SECURITY` foi ligado na migration 0001 e **desligado na 0002**.
+O plano pedia; estava errado para esta topologia, e o erro só apareceria em
+produção.
+
+O FORCE aplica as policies também ao **dono** da tabela. Em desenvolvimento não
+muda nada, porque o dono é o `POSTGRES_USER` — superusuário, que ignora RLS de
+qualquer jeito. Em produção, onde o dono não deve ser superusuário, ele passa a
+valer, e aí:
+
+| Consequência | Como se manifesta |
+|---|---|
+| Admin lista zero linhas | Consulta como dono e nunca entra em `remind_app` |
+| Excluir usuário falha | O Django coleta a cascata com SELECTs que não veem nada, e o DELETE do pai bate na FK |
+| Data migration não faz nada | Roda contra zero linhas e reporta sucesso |
+
+Três falhas silenciosas em troca de proteger o dono contra si mesmo — e o dono,
+aqui, é infraestrutura de confiança: DDL, Admin e criação do banco de teste. Quem
+executa consulta de usuário é `remind_app`, que **não é dono** e por isso
+continua sujeito às policies com ou sem FORCE.
+
+Medido neste cluster antes de decidir — tabela temporária, dono `NOSUPERUSER
+NOBYPASSRLS`, uma linha que a policy não casa:
+
+```
+RLS sem FORCE ..... o dono vê 1
+RLS com FORCE ..... o dono vê 0
+```
+
+`test_the_owner_is_not_subject_to_the_policies` fixa o estado: RLS ligado, FORCE
+desligado, nas cinco tabelas.
 
 As policies:
 
@@ -474,3 +501,54 @@ morde ninguém — a única view não-atômica é o login, e `TokenViewBase` do
 SimpleJWT já vem com `authentication_classes = ()`, então a autenticação nem
 roda ali. Vale como aviso para a próxima view que precisar sair do
 `ATOMIC_REQUESTS`.
+
+### Filtro de log: redigir antes da formatação apaga os próprios placeholders
+
+`RedactingFilter` roda antes de o handler formatar — é o que faz a redação valer
+para qualquer formato de saída. Mas a primeira versão redigia `record.msg`
+direto, e `record.msg` ainda é o **template**:
+
+```python
+logger.info("token=%s emitido", jti)
+# msg vira "token=[REDIGIDO] emitido"  ← o %s foi comido pelo regex
+# args continua ("abc",)
+# getMessage() -> TypeError: not all arguments converted
+```
+
+O `logging` engole esse `TypeError` em `handleError`. Resultado: a linha que
+deveria ser redigida **desaparece do log**, sem erro visível. O filtro está no
+handler raiz, então isso alcançaria bibliotecas de terceiros também.
+
+A ordem correta é: redigir os argumentos com a estrutura ainda de pé (é o que
+permite apagar um `data` inteiro), renderizar, e só então passar o regex no texto
+final. Coberto por `test_placeholders_survive_the_redaction`.
+
+### O traceback não passa pelo `record.msg`
+
+O `Formatter` renderiza a exceção **depois** do filtro, a partir de
+`record.exc_info`. Nada feito em `record.msg` alcança aquele texto — e é ali que
+mora o vazamento mais provável:
+
+```
+IntegrityError: new row for relation "records" violates check constraint ...
+DETAIL:  Failing row contains (uuid, {"cliente": "...", "responsavel": "..."}, ...)
+```
+
+O Postgres devolve a **linha inteira** quando uma constraint falha, JSONB e tudo,
+incluindo colunas `is_sensitive`. O Django loga isso em `django.request` com
+`exc_info` em todo 500.
+
+A saída é preencher `record.exc_text` na frente: o `Formatter` usa o valor já
+pronto e não chama `formatException` de novo. Dois padrões novos cobrem o formato
+do Postgres — `Failing row contains (…)` sai inteiro, e em `Key (cols)=(vals)` os
+nomes das colunas ficam (servem ao diagnóstico) e os valores saem. Coberto por
+`test_the_traceback_is_redacted_too`.
+
+### `ALLOWED_HOSTS` e `CSRF_TRUSTED_ORIGINS` não usam a mesma notação
+
+O curinga de subdomínio é `.example.com` numa lista e `https://*.example.com` na
+outra. Derivar a segunda da primeira com um `f"https://{host}"` produz
+`https://.example.com`, que **nunca casa** — e ninguém é avisado: não há erro de
+boot, só um 403 de CSRF em todo POST autenticado por sessão (Admin e Browsable
+API). `config/settings/prod.py` traduz as duas formas e descarta o `*` solto;
+`CSRF_TRUSTED_ORIGINS` no ambiente sobrescreve tudo.
