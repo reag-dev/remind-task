@@ -5,10 +5,9 @@ Nada aqui pode assumir DEBUG=True. Ajustes de ambiente ficam em dev.py / prod.py
 """
 
 from datetime import timedelta
-
-from celery.schedules import crontab
 from pathlib import Path
 
+from celery.schedules import crontab
 from decouple import Csv, config
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -61,6 +60,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
     # AxesMiddleware precisa vir DEPOIS do AuthenticationMiddleware.
     "axes.middleware.AxesMiddleware",
+    # RS01 — o mais INTERNO da lista: devolve a conexão ao papel de login no fim
+    # da request, antes de qualquer middleware externo escrever no banco.
+    "core.middleware.RowLevelSecurityMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -179,10 +181,14 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 # ---------------------------------------------------------------- DRF
 
 REST_FRAMEWORK = {
+    # RS01 — as subclasses com prefixo RLS entram no papel `remind_app` assim
+    # que a autenticação identifica o usuário. É o primeiro ponto do ciclo em
+    # que se sabe QUEM está pedindo, e (com ATOMIC_REQUESTS) já está dentro da
+    # transação que o SET LOCAL exige. Ver core/rls.py.
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "core.rls.RLSJWTAuthentication",
         # Session fica só para a Browsable API e o Admin.
-        "rest_framework.authentication.SessionAuthentication",
+        "core.rls.RLSSessionAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
@@ -221,15 +227,23 @@ CORS_ALLOW_CREDENTIALS = True
 
 # ---------------------------------------------------------------- logging
 
-# RS05 — o filtro de redação de campos sensíveis entra na Phase 7.
+# RS05 — RedactingFilter apaga credenciais, JWTs, hashes de senha e o `data`
+# dos registros antes de qualquer handler formatar a linha. Ver core/logging.py.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {
         "simple": {"format": "{levelname} {asctime} {name} {message}", "style": "{"},
     },
+    "filters": {
+        "redact": {"()": "core.logging.RedactingFilter"},
+    },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "simple"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "simple",
+            "filters": ["redact"],
+        },
     },
     "root": {"handlers": ["console"], "level": "INFO"},
 }

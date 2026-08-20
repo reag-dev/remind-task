@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phases 7-9 pendentes
+**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phase 7 em 2026-08-20; Phases 8-9 pendentes
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -357,13 +357,34 @@ CREATE INDEX alerts_pending_idx ON alerts (status, trigger_date) WHERE status = 
 4. `RedactingFilter` no logging: bloqueia `password`, `token`, `authorization`, o `data` de records e qualquer coluna `is_sensitive`.
 5. Settings de produção: `DEBUG=False`, `SECURE_SSL_REDIRECT`, `SESSION_COOKIE_SECURE`, `CSRF_COOKIE_SECURE`, `SECURE_HSTS_SECONDS`, `ALLOWED_HOSTS` explícito, `django-cors-headers` com allow-list.
 
-**Files Touched:** `core/migrations/0002_rls_policies.py`, `core/middleware.py`, `core/logging.py`, `config/settings/prod.py`, `core/tests/test_rls.py`
-**Verify:** `pytest core/tests/test_rls.py -v && python manage.py check --deploy --settings=config.settings.prod`
-**Done When:** teste que roda `Record.objects.all()` **sem** filtro por usuário, conectado como `remind_app` com `app.user_id` de A, retorna zero linhas de B; `check --deploy` sem issues.
-**Time:** 6h
+**Desvio 1 — um papel, não dois.** `remind_migrator` não foi criado. O dono das
+tabelas continua sendo o `POSTGRES_USER` da conexão do Django, e `remind_app`
+nasceu `NOLOGIN`: o runtime rebaixa a conexão que já tem (`SET LOCAL ROLE`) em
+vez de abrir uma segunda com credencial própria. Motivo: dois papéis com senha
+seriam mais um segredo para rotacionar, e trocar a conexão `default` para o papel
+fraco quebraria `migrate` e a criação do banco de teste. Justificativa completa na
+nota 8 de `docs/data-model.md`.
 
-**Replanning triggers:**
-- Se RLS quebrar migrations ou o Django Admin → isolar `remind_app` só no runtime e documentar. Se ainda assim travar, RLS vira Phase 7b opcional e o isolamento fica só no queryset — registrar a regressão explicitamente no README.
+**Desvio 2 — onde o contexto é aberto.** O plano previa um
+`SetCurrentUserMiddleware`. Não funciona: `ATOMIC_REQUESTS` envolve a *view*, não
+o middleware, então um `SET LOCAL` no `process_request` rodaria fora de
+transação e não aplicaria nada. Além disso o usuário do JWT só é conhecido dentro
+da view — `AuthenticationMiddleware` só resolve sessão. O contexto passou para as
+classes de autenticação do DRF (`core/rls.py`), que rodam dentro da transação e
+depois de identificar o usuário. O middleware ficou só com a saída.
+
+**Ativado no Admin?** Não — decisão registrada, ver README. Foi o gatilho de
+replanejamento previsto ("isolar `remind_app` só no runtime e documentar").
+
+**Files Touched:** `core/rls.py`, `core/middleware.py`, `core/logging.py`,
+`core/schema.py`, `core/apps.py`, `core/migrations/0001_rls_policies.py`,
+`config/settings/base.py`, `config/settings/prod.py`, `exports/services.py`,
+`alerts/tasks.py`, `core/tests/test_rls.py`, `core/tests/test_redaction.py`
+**Verify:** `pytest core/ -v && python manage.py check --deploy --settings=config.settings.prod`
+**Done When:** ✅ 21 testes de RLS + 4 de redação passam; a suíte inteira passa
+(217); `check --deploy` sem nenhuma issue; verificado também em `psql` com
+`SET ROLE remind_app` (0 linhas sem contexto, só as de A com o uuid de A).
+**Time:** 6h estimadas
 
 ---
 

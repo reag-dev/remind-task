@@ -263,8 +263,70 @@ WHERE due_date BETWEEN :hoje - INTERVAL '30 days'
                    AND :hoje + :max_offset_days
 ```
 
-### 8. RLS com dois roles
-`remind_migrator` (dono das tabelas, roda `migrate`) e `remind_app` (runtime, `NOSUPERUSER NOBYPASSRLS`). Sem essa separação o dono da tabela ignora as policies em silêncio — usar também `FORCE ROW LEVEL SECURITY`. A GUC `app.user_id` é setada com `SET LOCAL` dentro da transação do request (`ATOMIC_REQUESTS=True`) para não vazar entre conexões do pool.
+### 8. RLS: um papel sem LOGIN, não dois usuários de banco
+
+O desenho original previa dois papéis com credencial — `remind_migrator` (dono,
+roda `migrate`) e `remind_app` (runtime). **Implementado diferente:** o dono
+continua sendo o `POSTGRES_USER` da conexão do Django, e `remind_app` foi criado
+`NOLOGIN`. O runtime não abre uma segunda conexão: rebaixa a que já tem, dentro
+da transação.
+
+```sql
+SET LOCAL ROLE remind_app;                        -- NOSUPERUSER, NOBYPASSRLS
+SELECT set_config('app.user_id', '<uuid>', true);
+```
+
+Por que assim:
+
+- **Uma credencial a menos.** Dois papéis com senha seriam mais um segredo para
+  distribuir, rotacionar e vazar. `NOLOGIN` não tem senha: ninguém se conecta
+  como `remind_app`, só se entra nele.
+- **`migrate` e o banco de teste continuam funcionando.** Criar banco e rodar
+  DDL exige um papel forte. Trocar a conexão inteira para o papel fraco
+  quebraria `manage.py test`/`pytest`, que criam o banco pelo mesmo `default`.
+- **Os dois comandos são `LOCAL`.** O Postgres os desfaz no COMMIT, então uma
+  conexão persistente (`CONN_MAX_AGE`) nunca carrega o usuário de uma request
+  para a seguinte — o mesmo objetivo do desenho original, por outro caminho.
+
+`FORCE ROW LEVEL SECURITY` fica ligado assim mesmo. Hoje ele é inócuo (o dono é
+superusuário, e superusuário ignora RLS de qualquer jeito); em produção, onde o
+dono não deve ser superusuário, é ele que impede o dono de furar as policies.
+
+As policies:
+
+```sql
+-- tables, records, alert_rules, alerts — dono na própria linha
+CREATE POLICY <t>_owner ON <t>
+    USING      (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid)
+    WITH CHECK (user_id = NULLIF(current_setting('app.user_id', true), '')::uuid);
+
+-- columns — pertence à tabela, que tem dono
+CREATE POLICY columns_owner ON columns
+    USING (EXISTS (SELECT 1 FROM tables t
+                   WHERE t.id = columns.table_id
+                     AND t.user_id = NULLIF(current_setting('app.user_id', true), '')::uuid));
+```
+
+Detalhes que não são estéticos:
+
+- **`NULLIF` antes do cast.** `current_setting(..., true)` devolve `''` quando a
+  GUC foi limpa, e `''::uuid` não é NULL — é erro de sintaxe. Sem o `NULLIF`,
+  toda consulta feita fora de contexto estouraria em vez de devolver zero linhas.
+- **`WITH CHECK`, não só `USING`.** Sem ele o isolamento seria só de leitura:
+  daria para INSERIR uma linha em nome de outra conta e depois não conseguir
+  vê-la — pior do que recusar na hora.
+- **Falha fechada.** Sem `app.user_id`, nenhuma linha casa. Zero linhas é o
+  fracasso certo; a base inteira seria o errado.
+
+Onde o contexto é aberto: nas classes de autenticação do DRF (`core/rls.py`),
+no streaming do CSV (`exports/services.py`, que abre a própria transação) e no
+job de alertas (`alerts/tasks.py`, uma transação por usuário). O
+`RowLevelSecurityMiddleware` só cuida da saída.
+
+**O Django Admin fica de fora**, de propósito: autentica por sessão, sem passar
+pelo DRF, e continua consultando como dono. Um admin que só enxerga as próprias
+linhas não serviria para suporte. O isolamento do Admin é o controle de acesso ao
+Admin.
 
 ---
 
@@ -285,6 +347,7 @@ WHERE due_date BETWEEN :hoje - INTERVAL '30 days'
 | `columns.type` é varchar + CHECK, não ENUM nativo | `ALTER TYPE ... ADD VALUE` não roda em transação nem reverte |
 | `columns.key` é gerado e **imutável**; `columns.type` também é imutável | Renomear não pode reescrever registros; trocar o tipo corromperia valores já gravados |
 | `columns.position` só muda pelo endpoint de reorder | PATCH isolado em uma posição colidiria com outra coluna |
+| RLS usa **um** papel `NOLOGIN` (`remind_app`) em vez de dois papéis com credencial | Evita um segredo novo e preserva `migrate` e a criação do banco de teste — ver nota 8 |
 
 ---
 
@@ -379,3 +442,35 @@ Correção: o endpoint de login roda sob `transaction.non_atomic_requests`
 para setar — e as únicas escritas são a tentativa do axes e o `last_login`.
 Regressão coberta por `test_failed_login_attempt_survives_the_request`, que
 precisa de `django_db(transaction=True)` para reproduzir a semântica real.
+
+### `SET LOCAL` sobrevive ao fim da request quando o teste é o dono da transação
+
+Em produção o `SET LOCAL ROLE` se desfaz sozinho: a transação da request (
+`ATOMIC_REQUESTS`) faz COMMIT e o Postgres restaura o papel. Sob pytest-django,
+porém, o teste inteiro já roda dentro de uma transação — a da request vira um
+**savepoint**, e um `SET LOCAL` feito lá dentro só é desfeito no fim da
+transação externa, ou seja, no fim do teste.
+
+Sintoma: qualquer asserção com o ORM feita **depois** de um `client.get()`
+continuaria filtrada por RLS, no contexto do usuário da request. Testes que
+verificam efeito colateral (`Record.objects.count()` depois de um POST) passariam
+a medir outra coisa, sem erro nenhum.
+
+Correção: `RowLevelSecurityMiddleware` devolve a conexão ao papel de login no
+`finally` de toda request. É a única função dele — quem *entra* no contexto são
+as classes de autenticação. Coberto por
+`test_the_connection_is_not_left_downgraded_after_a_request`.
+
+### `core.rls.enter()` recusa rodar fora de transação — e isso é a intenção
+
+Fora de uma transação, `SET LOCAL` vira um WARNING do Postgres e **não aplica
+nada**. As consultas seguintes rodariam como dono, sem isolamento, e nada no log
+da aplicação denunciaria. Por isso `enter()` levanta `ImproperlyConfigured` em
+vez de seguir em frente.
+
+A consequência prática: uma view sob `transaction.non_atomic_requests` **não
+pode** ter classes de autenticação que entrem no contexto de RLS. Hoje isso não
+morde ninguém — a única view não-atômica é o login, e `TokenViewBase` do
+SimpleJWT já vem com `authentication_classes = ()`, então a autenticação nem
+roda ali. Vale como aviso para a próxima view que precisar sair do
+`ATOMIC_REQUESTS`.

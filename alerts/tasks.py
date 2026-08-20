@@ -2,10 +2,10 @@ import logging
 
 from celery import shared_task
 from django.contrib.auth import get_user_model
-from django.db.models import Exists, OuterRef
 
 from alerts.models import AlertRule
 from alerts.services import generate_for_user
+from core import rls
 from core.dates import today_in
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,11 @@ def scan_due_records() -> int:
     total = 0
     for user in candidates.iterator(chunk_size=500):
         try:
-            created = generate_for_user(user, today_in(user.timezone))
+            # RS01 — uma transação por usuário. O job roda fora de qualquer
+            # request, então é aqui que ele entra no papel `remind_app`; o
+            # COMMIT desfaz papel e GUC, e o usuário seguinte começa limpo.
+            with rls.session(user.pk):
+                created = generate_for_user(user, today_in(user.timezone))
         except Exception:
             # Um usuário com dado estranho não pode derrubar a varredura dos
             # demais. Sem e-mail, id ou payload no log (RS05).

@@ -5,9 +5,9 @@ Geração do CSV (RF13).
 import csv
 from typing import Iterator
 
-from django.db import transaction
 from django.utils.text import slugify
 
+from core import rls
 from exports.csv_safety import neutralize
 from tables.models import ColumnType
 
@@ -51,8 +51,13 @@ def stream_rows(table, columns, queryset, delimiter: str = ",") -> Iterator[str]
     A transação é aberta AQUI dentro, e não pela request: o corpo de uma
     StreamingHttpResponse é consumido depois que a view retornou, quando a
     transação da request já foi encerrada. Abrir uma própria garante que a
-    exportação inteira enxergue um snapshot consistente — e dá à Phase 7 (RLS)
-    uma transação viva para o `SET LOCAL app.user_id`.
+    exportação inteira enxergue um snapshot consistente — e dá ao RLS (RS01) uma
+    transação viva onde entrar no papel `remind_app`.
+
+    Sem esse `rls.session` a exportação sairia VAZIA: o papel e a GUC da request já
+    foram desfeitos no COMMIT dela, e a policy de `records` não casaria com
+    ninguém. É o dono da tabela que dá o usuário — o mesmo que a view já
+    autorizou em `get_table()`, nunca o corpo da requisição.
     """
     if delimiter not in ALLOWED_DELIMITERS:
         delimiter = ","
@@ -61,7 +66,7 @@ def stream_rows(table, columns, queryset, delimiter: str = ",") -> Iterator[str]
 
     yield BOM + writer.writerow([column.name for column in columns])
 
-    with transaction.atomic():
+    with rls.session(table.user_id):
         for record in queryset.iterator(chunk_size=CHUNK_SIZE):
             data = record.data or {}
             yield writer.writerow(

@@ -75,7 +75,7 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–6 concluídas** — MVP funcional completo: da autenticação à exportação. Faltam o endurecimento (RLS, redação de logs) e a suíte de segurança.
+**Phases 0–7 concluídas** — MVP funcional completo e endurecido: da autenticação à exportação, com isolamento em duas camadas (queryset + Row-Level Security no Postgres) e redação de log. Falta a suíte de segurança e a documentação de uso.
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -86,7 +86,7 @@ Não há frontend. A interface do MVP é:
 | 4 | Status e ordenação por vencimento | ✅ |
 | 5 | `alerts` — regras, job Celery, inbox | ✅ |
 | 6 | `exports` — CSV seguro | ✅ |
-| 7 | Row-Level Security e endurecimento | ⬜ |
+| 7 | Row-Level Security e endurecimento | ✅ |
 | 8 | Suite de segurança do MVP | ⬜ |
 | 9 | Documentação e seed demo | ⬜ |
 
@@ -245,6 +245,61 @@ curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
 - **django-axes** bloqueia a combinação IP+usuário após 5 falhas (429 por 15 min). Ver a armadilha do `ATOMIC_REQUESTS` em [`docs/data-model.md`](docs/data-model.md#armadilhas-encontradas-na-implementação).
 - **Recurso alheio responde 404, nunca 403** — 403 confirmaria que o recurso existe e entregaria informação a quem sonda ids (RS04). Vale também para coleções aninhadas: as colunas de uma tabela que não é sua não existem.
 - **O dono vem sempre do token**, nunca do corpo da requisição. Mandar `user` no payload de criação de tabela não muda nada.
+- **Row-Level Security no Postgres** como segunda barreira — detalhado abaixo.
+- **Log redigido na origem**: credenciais, JWTs, hashes de senha e o `data` inteiro dos registros são apagados por um `logging.Filter` antes de qualquer handler formatar a linha (`core/logging.py`).
+- **Headers de produção conferidos**: `python manage.py check --deploy --settings=config.settings.prod` passa sem nenhuma issue. `DJANGO_ALLOWED_HOSTS` vazio derruba o boot em vez de virar um 400 misterioso.
+
+### Isolamento em duas camadas (RS01)
+
+A primeira camada é o `get_queryset()` de cada view, filtrado por `request.user`.
+Ela funciona — até alguém escrever `Record.objects.all()` num relatório novo, num
+comando de management ou numa task. A segunda camada põe a mesma regra dentro do
+Postgres, onde código de aplicação nenhum consegue esquecê-la.
+
+Como o runtime entra nela: a conexão do Django **se rebaixa** dentro da transação
+da request, para um papel `NOLOGIN` que não pode furar as policies.
+
+```sql
+SET LOCAL ROLE remind_app;                        -- NOSUPERUSER, NOBYPASSRLS
+SELECT set_config('app.user_id', '<uuid do dono>', true);
+```
+
+Os dois comandos são `LOCAL`: o Postgres os desfaz no COMMIT, então nem um pool
+de conexões persistentes carrega o usuário de uma request para a próxima. Quem
+abre o contexto são as classes de autenticação do DRF — o primeiro ponto do ciclo
+em que se sabe *quem* está pedindo (`core/rls.py`).
+
+Prova de que a barreira existe de verdade, direto no `psql`:
+
+```console
+ ROLE remind_app;
+ count(*) FROM records;                    -- sem contexto
+ 0
+ set_config('app.user_id', '<uuid de A>', false);
+ count(*) FROM records;                    -- como A
+ 1
+ set_config('app.user_id', '<uuid de B>', false);
+ count(*) FROM records;                    -- como B
+ 0
+```
+
+Os testes de `core/tests/test_rls.py` consultam **sem filtro por usuário** de
+propósito: o que está sob teste não é o queryset das views, é o que sobra quando
+alguém esquece o filtro. O primeiro teste do arquivo confere que o papel ativo
+não é superusuário nem tem `BYPASSRLS` — sem isso, todos os outros passariam por
+acidente.
+
+Duas exceções conscientes:
+
+- **O Django Admin não passa por RLS.** Autentica por sessão, sem DRF, e consulta
+  como dono. Um admin que só enxerga as próprias linhas não serviria para
+  suporte; o isolamento do Admin é o controle de acesso ao Admin.
+- **A exportação CSV abre a própria transação.** O corpo de uma
+  `StreamingHttpResponse` é consumido depois que a request fechou — sem entrar no
+  contexto de novo, o CSV sairia vazio.
+
+O desenho, as policies e as armadilhas estão em
+[`docs/data-model.md`](docs/data-model.md#8-rls-um-papel-sem-login-não-dois-usuários-de-banco).
 
 ### Regras estruturais garantidas pelo banco
 
