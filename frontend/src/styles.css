@@ -1,0 +1,391 @@
+:root {
+  --texto: #1a1c1e;
+  --fundo: #ffffff;
+  --sutil: #5c636a;
+  --borda: #d7dbdf;
+  --acento: #1b4dd8;
+  --ok: #0a7c42;
+  --erro: #b3261e;
+
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--texto);
+  background: var(--fundo);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.andaime,
+.formulario {
+  max-width: 26rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}
+
+.formulario form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.formulario label {
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+.formulario input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  /* Contorno explícito: alguns resets apagam o padrão do browser e a navegação
+     por teclado fica sem indicação de foco. */
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+button {
+  margin-top: 1.25rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--acento);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.erro {
+  color: var(--erro);
+  margin: 0.5rem 0 0;
+}
+
+ul.erro {
+  padding-left: 1.1rem;
+}
+
+.carregando {
+  margin: 4rem auto;
+  max-width: 26rem;
+  padding: 0 1rem;
+  color: var(--sutil);
+}
+
+/* ---------------------------------------------------------- moldura */
+
+.cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--borda);
+}
+
+.cabecalho-direita {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.marca {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+.conteudo {
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 0 1.25rem;
+}
+
+.sutil {
+  color: var(--sutil);
+  font-size: 0.9rem;
+}
+
+.vazio {
+  color: var(--sutil);
+  border: 1px dashed var(--borda);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.titulo-com-acao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* ---------------------------------------------------------- botões */
+
+.botao,
+button.secundario,
+button.destrutivo {
+  display: inline-block;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  margin-top: 0;
+}
+
+.botao {
+  background: var(--acento);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+button.secundario {
+  background: transparent;
+  color: var(--texto);
+  border: 1px solid var(--borda);
+}
+
+button.destrutivo {
+  background: transparent;
+  color: var(--erro);
+  border: 1px solid var(--erro);
+}
+
+button.ligacao {
+  background: none;
+  border: none;
+  color: var(--acento);
+  text-decoration: underline;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------- lista de tabelas */
+
+.lista-tabelas {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.linha-tabela {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.nome-tabela {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.linha-tabela p {
+  margin: 0.25rem 0 0;
+}
+
+.meta {
+  font-size: 0.85rem;
+}
+
+.acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.formulario-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.formulario-inline input {
+  flex: 1 1 12rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario-inline button {
+  margin-top: 0;
+}
+
+.formulario textarea {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}
+
+/* ---------------------------------------------------------- diálogo */
+
+.dialogo {
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 1.5rem;
+  max-width: 30rem;
+}
+
+.dialogo::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialogo h2 {
+  margin-top: 0;
+}
+
+.dialogo-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* Visível para leitor de tela, invisível na tela. Um `display: none` sumiria
+   das duas — e o input inline ficaria sem rótulo acessível. */
+.oculto-visual {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- colunas */
+
+.cartao {
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+  max-width: none;
+}
+
+.cartao h2 {
+  margin-top: 0;
+}
+
+.formulario select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario select:disabled {
+  background: #f3f4f6;
+  color: var(--sutil);
+}
+
+label.caixa {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+label.caixa input {
+  width: auto;
+}
+
+.acoes-formulario {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.acoes-formulario button {
+  margin-top: 0;
+}
+
+.aviso {
+  border: 1px solid #f0c36d;
+  background: #fff8e6;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.lista-colunas {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  counter-reset: coluna;
+}
+
+.linha-coluna {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.coluna-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.coluna-info p {
+  margin: 0.2rem 0 0;
+}
+
+.coluna-info code {
+  background: #f3f4f6;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+
+.ordenar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.ordenar button {
+  padding: 0.1rem 0.45rem;
+  line-height: 1.3;
+}
