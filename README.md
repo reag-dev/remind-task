@@ -22,10 +22,23 @@ Requer apenas **Docker**. Não é preciso Python local.
 cp .env.example .env          # ajuste DJANGO_SECRET_KEY se quiser
 docker compose build
 docker compose up -d
+docker compose exec web python manage.py seed_demo
 curl http://localhost:8000/api/health/
 ```
 
-Resposta esperada: `{"status": "ok", "database": "up"}`
+Resposta esperada: `{"status": "ok", "database": "up"}`.
+
+O `seed_demo` cria a conta **demo@remind.local** / `Contrato!Vencendo#2026` e a
+tabela *Contratos* do [exemplo da especificação](docs/especificacao.md#7-exemplo-de-utilização),
+com os três contratos em três estados: um vencido, um vencendo em breve e um
+futuro. As datas são relativas ao dia da execução — as do documento são
+absolutas, e usá-las literalmente deixaria os três vencidos em uma semana.
+Rodar de novo não duplica nada e **reaproxima as datas**, então a demonstração
+continua útil meses depois.
+
+O comando se recusa a rodar com `DEBUG=False` sem `--force`: a conta tem senha
+conhecida e publicada aqui, o que em produção é uma porta aberta, não um dado de
+demonstração.
 
 | Comando | O que faz |
 |---|---|
@@ -36,6 +49,7 @@ Resposta esperada: `{"status": "ok", "database": "up"}`
 | `make test` | roda a suite (`pytest`) |
 | `make lint` | roda o `ruff` com as regras de [`ruff.toml`](ruff.toml) |
 | `make cov` | suíte + gate de cobertura em 85% ([`.coveragerc`](.coveragerc)) |
+| `make seed` | conta demo + tabela do exemplo da especificação |
 | `make reset` | **apaga o volume do Postgres** e sobe de novo |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
@@ -80,9 +94,70 @@ Não há frontend. A interface do MVP é:
 
 ---
 
+## Mapa de requisitos
+
+Cada requisito da [especificação](docs/especificacao.md), o código que o entrega e
+o teste que o segura. A coluna **Prova** é a que importa numa revisão: sem ela,
+"implementado" é opinião.
+
+### Funcionais
+
+| ID | Requisito | Onde | Prova |
+|---|---|---|---|
+| RF01 | Cadastro de usuário | `POST /api/auth/register/` · [accounts/views.py](accounts/views.py) | `accounts/tests/test_auth.py` |
+| RF02 | Login / logout | `/api/auth/login/`, `/logout/`, `/refresh/` | `accounts/tests/test_auth.py` |
+| RF03 | Criação de tabela do próprio dono | [tables/views.py](tables/views.py) — `perform_create` grava `user` do token | `tables/tests/test_tables.py` |
+| RF04 | Ver só as tabelas da conta | `get_queryset()` filtrado + RLS | `tests/security/test_cross_tenant.py` |
+| RF05 | Colunas configuráveis | [tables/models.py](tables/models.py) — `ColumnType` | `tables/tests/test_columns.py` |
+| RF06 | Campo de vencimento, no máximo um | índice único parcial `columns_one_due_date_per_table` | `tables/tests/test_columns.py` |
+| RF07 | Inserir registro | [records/validators.py](records/validators.py) valida contra a definição de colunas | `records/tests/test_data_validation.py` |
+| RF08 | Editar registro | [records/views.py](records/views.py) | `records/tests/test_records_crud.py` |
+| RF09 | Excluir registro | idem | `records/tests/test_records_crud.py` |
+| RF10 | Indicadores de vencimento | [records/models.py](records/models.py) — `with_due_status()`, calculado no fuso do dono | `records/tests/test_due_status.py` |
+| RF11 | Ordenação por vencimento | `ORDER BY due_date ASC NULLS LAST` + índice | `records/tests/test_ordering.py` |
+| RF12 | Notificações | [alerts/tasks.py](alerts/tasks.py) — Celery Beat a cada 15 min | `alerts/tests/test_scan_task.py`, `test_idempotency.py` |
+| RF13 | Exportação CSV | [exports/services.py](exports/services.py) — streaming | `exports/tests/test_export.py` |
+
+### Segurança
+
+| ID | Requisito | Onde | Prova |
+|---|---|---|---|
+| RS01 | Isolamento entre usuários | queryset filtrado **+** RLS no Postgres ([core/rls.py](core/rls.py)) | `tests/security/test_cross_tenant.py`, `test_queryset_layer.py`, `core/tests/test_rls.py` |
+| RS02 | Autenticação e autorização por recurso | `IsAuthenticated` + propriedade em toda view | `tests/security/test_auth_required.py` |
+| RS03 | Proteção de credenciais | Argon2id + `django-axes` (5 falhas / 15 min) | `tests/security/test_credentials.py` |
+| RS04 | Troca de ID não dá acesso | UUID público + **404, nunca 403** | `tests/security/test_cross_tenant.py` |
+| RS05 | Dados sensíveis | `columns.is_sensitive` + [core/logging.py](core/logging.py) | `tests/security/test_logging_redaction.py`, `core/tests/test_redaction.py` |
+| RS06 | Comunicação segura | [config/settings/prod.py](config/settings/prod.py) | `tests/security/test_transport.py` |
+| RS07 | Controle de sessão | JWT com rotação e blacklist de refresh | `accounts/tests/test_auth.py` |
+| RS08 | Exportação segura | reusa a queryset autorizada + [exports/csv_safety.py](exports/csv_safety.py) | `tests/security/test_export_authorization.py` |
+
+### Forma do modelo
+
+O schema vigente, com colunas, índices e as decisões que os justificam, mora em
+[`docs/data-model.md`](docs/data-model.md) — este diagrama é só o mapa das
+relações.
+
+```mermaid
+erDiagram
+    users       ||--o{ tables      : possui
+    tables      ||--o{ columns     : define
+    tables      ||--o{ records     : contem
+    tables      ||--o{ alert_rules : configura
+    records     ||--o{ alerts      : dispara
+    alert_rules ||--o{ alerts      : gera
+    users       ||--o{ alerts      : recebe
+```
+
+Um registro é **uma linha** com `data JSONB` — não uma linha por valor. A
+`due_date` é promovida para coluna nativa porque é o único campo que o sistema
+precisa ordenar e varrer. O porquê está na
+[decisão central](docs/data-model.md#decisão-central-jsonb-híbrido-não-eav-puro).
+
+---
+
 ## Estado atual
 
-**Phases 0–8 concluídas** — MVP funcional, endurecido e com os 10 critérios de segurança da especificação sob teste. Falta só a documentação de uso e o seed demo (Phase 9).
+**MVP completo — Phases 0–9.** Da autenticação à exportação, com isolamento em duas camadas, redação de log, os 10 critérios de segurança sob teste e uma conta demo pronta. O plano parava em "roda em Docker Compose local com testes verdes"; é onde está.
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -95,7 +170,7 @@ Não há frontend. A interface do MVP é:
 | 6 | `exports` — CSV seguro | ✅ |
 | 7 | Row-Level Security e endurecimento | ✅ |
 | 8 | Suíte de segurança do MVP | ✅ |
-| 9 | Documentação e seed demo | ⬜ |
+| 9 | Documentação, schema e seed demo | ✅ |
 
 ### Endpoints disponíveis
 

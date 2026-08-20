@@ -1,4 +1,4 @@
-.PHONY: up down build logs sh migrate makemigrations test cov lint lint-fix superuser shell reset
+.PHONY: up down build logs sh migrate makemigrations test cov lint lint-fix seed superuser shell reset
 
 up:            ## sobe a stack completa
 	docker compose up -d
@@ -26,6 +26,9 @@ test:
 
 cov:            ## suite + gate de cobertura em 85% (.coveragerc)
 	docker compose run --rm web pytest --cov
+
+seed:           ## conta demo + tabela Contratos do exemplo da especificação
+	docker compose exec web python manage.py seed_demo
 
 lint:           ## regras em ruff.toml — o repo passa limpo
 	docker compose run --rm web ruff check .

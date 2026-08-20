@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phases 7 e 8 em 2026-08-20; Phase 9 pendente
+**Status:** concluído — Phases 0-6 em 2026-08-19; Phases 7, 8 e 9 em 2026-08-20
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -441,10 +441,34 @@ passam; cobertura de domínio 92% contra gate de 85%.
 4. `docs/data-model.md`: o DDL e as 8 notas de modelagem desta seção, como documento vivo.
 5. `manage.py seed_demo`: usuário demo + tabela "Contratos" do exemplo da seção 7 da especificação.
 
-**Files Touched:** `config/urls.py`, `tables/admin.py`, `records/admin.py`, `alerts/admin.py`, `README.md`, `docs/data-model.md`, `core/management/commands/seed_demo.py`
-**Verify:** `docker compose up -d && python manage.py seed_demo && curl -f http://localhost:8000/api/schema/`
-**Done When:** `/api/docs/` lista todos os endpoints; seed cria a tabela Contratos com 3 registros e status de vencimento corretos.
-**Time:** 3h
+**Quatro dos cinco passos já estavam prontos** quando a fase começou: `/api/docs/`
+e `/api/schema/` entraram na Phase 0, os admins de `Table`, `Column`, `Record`,
+`AlertRule` e `Alert` já existiam com `data` somente leitura, e o
+`docs/data-model.md` virou documento vivo ao longo das Phases 3 a 8. Sobrou o
+`seed_demo` e o mapa RF/RS do README.
+
+**Desvio — datas relativas, não as do documento.** O exemplo da seção 7 usa datas
+absolutas (15, 20 e 25/08/2026). O seed usa offsets a partir de hoje (-5, +2,
++30), porque datas fixas deixariam os três contratos vencidos em uma semana e a
+demonstração perderia exatamente o que existe para mostrar. Os três estados do
+exemplo — vencido, vence em breve, futuro — saem iguais em qualquer dia.
+
+**Idempotência é convergência, não "pular se existe".** Rodar o seed de novo
+reaproxima as datas em vez de deixar o estado velho. Semear em janeiro e rodar em
+março devolve a demonstração ao estado útil.
+
+**O seed se recusa a rodar com `DEBUG=False`** sem `--force`: a conta tem senha
+conhecida e publicada no README, o que em produção é uma porta aberta.
+
+**Files Touched:** `core/management/commands/seed_demo.py`,
+`core/management/__init__.py`, `core/management/commands/__init__.py`,
+`core/tests/test_seed_demo.py`, `core/tests/test_schema.py`, `Makefile`,
+`README.md`
+**Verify:** `make seed && curl -f http://localhost:8000/api/schema/`
+**Done When:** ✅ `/api/docs/` lista os 20 caminhos da API (conferido contra a
+classificação de rotas da Phase 8, com igualdade exata); o seed cria a tabela
+Contratos com 3 registros em `overdue`, `due_soon` e `on_track`.
+**Time:** 3h estimadas
 
 ---
 
