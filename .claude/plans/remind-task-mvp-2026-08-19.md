@@ -1,7 +1,7 @@
 # Plan: remind-task — Sistema de Alertas e Tabelas Dinâmicas (MVP backend)
 
 **Date:** 2026-08-19
-**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phase 7 em 2026-08-20; Phases 8-9 pendentes
+**Status:** active — Phases 0-6 concluídas em 2026-08-19; Phases 7 e 8 em 2026-08-20; Phase 9 pendente
 **Stack:** Django 5 + DRF + PostgreSQL 16 + Celery/Redis + Docker Compose
 
 ## Goal
@@ -398,13 +398,36 @@ replanejamento previsto ("isolar `remind_app` só no runtime e documentar").
 4. Testes de hash de senha, export autenticado, e de que o log de request não contém valor de coluna sensível (`caplog`).
 5. `pytest-cov` com gate em 85% nos apps de domínio.
 
-**Files Touched:** `conftest.py`, `tests/security/test_cross_tenant.py`, `tests/security/test_auth_required.py`, `tests/security/test_logging_redaction.py`, `pytest.ini`
-**Verify:** `pytest -v --cov=. --cov-fail-under=85`
-**Done When:** os 10 checkboxes da seção 10 têm teste correspondente e a suite passa.
-**Time:** 5h
+**Desvio 1 — fixtures reaproveitadas.** O plano pedia `user_a`/`user_b` novos no
+`conftest.py` da raiz. Não foram criados: `user`/`other_user` já existem e são
+usados por 224 testes; renomear seria churn sem ganho. O que faltava era um
+conjunto COMPLETO de recursos por dono (coluna, registro, regra, alerta), e isso
+virou `mine`/`theirs` em `tests/security/conftest.py`.
 
-**Replanning triggers:**
-- Cobertura abaixo de 85% por código de infraestrutura → excluir `config/` e `*/migrations/` do cálculo antes de baixar o gate.
+**Desvio 2 — seis arquivos, não três.** Um por grupo de critério, para a
+rastreabilidade da seção 10 ficar direta: cada checkbox aponta um teste nominal.
+
+**Desvio 3 — o gate não entrou no `pytest.ini`.** Medir cobertura custa ~2min
+contra ~1min30 sem, em toda execução. A configuração foi para `.coveragerc`
+(inclusive `fail_under = 85`) e o gate virou `make cov`. O laço rápido continua
+rápido; o gate é um comando.
+
+**Dois testes que crescem com o app**, e são o que dá validade ao resto:
+`test_every_api_route_is_classified` (rota nova precisa se declarar pública ou
+protegida) e `test_every_configured_handler_redacts` (handler de log novo precisa
+do filtro). Sem eles, a suíte seria uma lista congelada que um endpoint novo
+contornaria por omissão.
+
+**Files Touched:** `tests/__init__.py`, `tests/security/__init__.py`,
+`tests/security/conftest.py`, `tests/security/test_cross_tenant.py`,
+`tests/security/test_auth_required.py`, `tests/security/test_credentials.py`,
+`tests/security/test_transport.py`, `tests/security/test_logging_redaction.py`,
+`tests/security/test_export_authorization.py`, `.coveragerc`, `Makefile`,
+`core/logging.py` (docstring), `docs/especificacao.md`, `README.md`
+**Verify:** `make cov`
+**Done When:** ✅ os 10 checkboxes da seção 10 apontam teste nominal; 362 testes
+passam; cobertura de domínio 92% contra gate de 85%.
+**Time:** 5h estimadas
 
 ---
 

@@ -35,6 +35,7 @@ Resposta esperada: `{"status": "ok", "database": "up"}`
 | `make migrate` | aplica migrations |
 | `make test` | roda a suite (`pytest`) |
 | `make lint` | roda o `ruff` com as regras de [`ruff.toml`](ruff.toml) |
+| `make cov` | suíte + gate de cobertura em 85% ([`.coveragerc`](.coveragerc)) |
 | `make reset` | **apaga o volume do Postgres** e sobe de novo |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
@@ -81,7 +82,7 @@ Não há frontend. A interface do MVP é:
 
 ## Estado atual
 
-**Phases 0–7 concluídas** — MVP funcional completo e endurecido: da autenticação à exportação, com isolamento em duas camadas (queryset + Row-Level Security no Postgres) e redação de log. Falta a suíte de segurança e a documentação de uso.
+**Phases 0–8 concluídas** — MVP funcional, endurecido e com os 10 critérios de segurança da especificação sob teste. Falta só a documentação de uso e o seed demo (Phase 9).
 
 | Phase | Escopo | Status |
 |---|---|---|
@@ -93,7 +94,7 @@ Não há frontend. A interface do MVP é:
 | 5 | `alerts` — regras, job Celery, inbox | ✅ |
 | 6 | `exports` — CSV seguro | ✅ |
 | 7 | Row-Level Security e endurecimento | ✅ |
-| 8 | Suite de segurança do MVP | ⬜ |
+| 8 | Suíte de segurança do MVP | ✅ |
 | 9 | Documentação e seed demo | ⬜ |
 
 ### Endpoints disponíveis
@@ -306,6 +307,46 @@ Duas exceções conscientes:
 
 O desenho, as policies e as armadilhas estão em
 [`docs/data-model.md`](docs/data-model.md#8-rls-um-papel-sem-login-não-dois-usuários-de-banco).
+
+### Os 10 critérios da especificação estão sob teste
+
+`tests/security/` existe para uma coisa só: **falhar quando uma proteção sumir**.
+Os testes de cada app já demonstram, de passagem, que as defesas funcionam hoje.
+O que faltava era a rede que quebra a build quando alguém apaga um filtro de
+queryset ou troca uma classe de permissão.
+
+| Critério (seção 10) | Prova |
+|---|---|
+| A não acessa / edita / exclui recurso de B | `test_cross_tenant.py` — todo tipo de recurso × todo método HTTP |
+| Acesso indevido tratado com segurança | 404 em tudo, **nunca 403** — 403 confirmaria que o recurso existe |
+| Endpoints protegidos exigem autenticação | `test_auth_required.py` — 401 sem token e com token inventado |
+| Senha nunca em texto puro | `test_credentials.py` — confere a LINHA inteira no banco, não só a coluna |
+| HTTPS em produção | `test_transport.py` — roda `check --deploy --fail-level WARNING` num subprocesso |
+| Dado sensível fora do log | `test_logging_redaction.py` — fluxo CRUD completo, o CPF não aparece em nenhuma linha |
+| Export exige autenticação e autorização | `test_export_authorization.py` |
+| Alerta não expõe dado sensível | payload mínimo; marcar a coluna como sensível protege até os alertas já emitidos |
+
+Dois testes valem por si, porque **crescem com o app** em vez de congelar uma
+lista:
+
+- `test_every_api_route_is_classified` varre a URLconf e falha se aparecer uma
+  rota que ninguém declarou como pública ou protegida. Endpoint novo sem
+  permissão não passa despercebido — a decisão vira revisão de código.
+- `test_every_configured_handler_redacts` falha se alguém acrescentar um handler
+  de log sem o filtro de redação. O filtro fica no handler, não no logger (é a
+  única posição que alcança `django.request` e bibliotecas), então cada handler
+  novo precisa da sua própria linha.
+
+E um terceiro, que nasceu de sabotar o código para ver se a suíte reagia:
+`test_queryset_layer.py` testa a **primeira** barreira com a RLS fora de cena.
+Apagar `filter(user=...)` de um `get_queryset()` não quebrava nenhum outro teste
+— a RLS filtrava a mesma consulta no banco e a API continuava correta. É a defesa
+em profundidade funcionando, mas deixaria a camada 1 sumir sem sinal. O teste
+usa `force_authenticate`, que pula as classes de autenticação e portanto não
+entra no papel `remind_app`; cada caso confere esse pressuposto antes de afirmar
+qualquer coisa.
+
+Cobertura do código de domínio: **92%**, gate em 85% (`make cov`).
 
 ### Regras estruturais garantidas pelo banco
 
