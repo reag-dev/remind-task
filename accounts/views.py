@@ -1,3 +1,5 @@
+from contextlib import suppress
+
 from drf_spectacular.utils import OpenApiResponse, extend_schema
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -101,12 +103,10 @@ class LogoutView(APIView):
     def post(self, request):
         raw = read_refresh_token(request)
         if raw:
-            try:
+            # Já expirado, já na blacklist ou malformado — o efeito desejado
+            # (token não vale mais) já está satisfeito.
+            with suppress(TokenError):
                 RefreshToken(raw).blacklist()
-            except TokenError:
-                # Já expirado, já na blacklist ou malformado — o efeito desejado
-                # (token não vale mais) já está satisfeito.
-                pass
 
         response = Response(status=status.HTTP_204_NO_CONTENT)
         return delete_refresh_cookie(response)

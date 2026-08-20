@@ -100,7 +100,8 @@ def test_cannot_touch_another_users_table(auth_client, other_table, method, payl
     existe, entregando informação a quem está sondando ids.
     """
     call = getattr(auth_client, method)
-    response = call(detail(other_table.id), payload, format="json") if payload else call(detail(other_table.id))
+    url = detail(other_table.id)
+    response = call(url, payload, format="json") if payload else call(url)
 
     assert response.status_code == 404
     assert Table.objects.filter(id=other_table.id).exists()

@@ -99,7 +99,7 @@ POLICIES = "".join(
     f"AND t.user_id = {CURRENT_USER})",
 )
 
-DROP_POLICIES = "".join(_disable(table) for table in OWNED_TABLES + ("columns",))
+DROP_POLICIES = "".join(_disable(table) for table in (*OWNED_TABLES, "columns"))
 
 
 class Migration(migrations.Migration):

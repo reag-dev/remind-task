@@ -79,7 +79,9 @@ def test_optional_fields_become_null(auth_client, table, columns):
         (ColumnType.EMAIL, "  Alguem@Example.com ", "Alguem@Example.com"),
     ],
 )
-def test_accepted_values_are_normalized(auth_client, table, single_column, column_type, value, expected):
+def test_accepted_values_are_normalized(
+    auth_client, table, single_column, column_type, value, expected
+):
     single_column(column_type)
 
     response = post(auth_client, table, value)
@@ -168,9 +170,8 @@ def test_database_refuses_a_data_that_is_not_an_object(table):
     """
     record = Record.objects.create(table=table, data={})
 
-    with pytest.raises(IntegrityError), transaction.atomic():
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE records SET data = %s::jsonb WHERE id = %s",
-                ["[1,2,3]", str(record.id)],
-            )
+    with pytest.raises(IntegrityError), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "UPDATE records SET data = %s::jsonb WHERE id = %s",
+            ["[1,2,3]", str(record.id)],
+        )

@@ -3,7 +3,7 @@ Geração do CSV (RF13).
 """
 
 import csv
-from typing import Iterator
+from collections.abc import Iterator
 
 from django.utils.text import slugify
 

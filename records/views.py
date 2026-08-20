@@ -2,7 +2,6 @@ import logging
 
 from django.http import StreamingHttpResponse
 from django.shortcuts import get_object_or_404
-
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework import viewsets

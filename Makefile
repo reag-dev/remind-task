@@ -1,4 +1,4 @@
-.PHONY: up down build logs sh migrate makemigrations test superuser shell reset
+.PHONY: up down build logs sh migrate makemigrations test lint lint-fix superuser shell reset
 
 up:            ## sobe a stack completa
 	docker compose up -d
@@ -23,6 +23,12 @@ makemigrations:
 
 test:
 	docker compose exec web pytest -v
+
+lint:           ## regras em ruff.toml — o repo passa limpo
+	docker compose run --rm web ruff check .
+
+lint-fix:
+	docker compose run --rm web ruff check --fix .
 
 superuser:
 	docker compose exec web python manage.py createsuperuser

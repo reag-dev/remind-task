@@ -50,12 +50,15 @@ class ColumnSerializer(serializers.ModelSerializer):
         # `type` é imutável: mudar o tipo de uma coluna deixaria os registros já
         # gravados com valores que não passam mais na validação da Phase 3 —
         # corrupção silenciosa. Para trocar o tipo, apague e recrie a coluna.
-        if self.instance is not None and "type" in attrs:
-            if attrs["type"] != self.instance.type:
-                raise serializers.ValidationError(
-                    {"type": "O tipo de uma coluna não pode ser alterado. "
-                             "Apague a coluna e crie outra."}
-                )
+        if (
+            self.instance is not None
+            and "type" in attrs
+            and attrs["type"] != self.instance.type
+        ):
+            raise serializers.ValidationError(
+                {"type": "O tipo de uma coluna não pode ser alterado. "
+                         "Apague a coluna e crie outra."}
+            )
 
         column_type = attrs.get("type") or getattr(self.instance, "type", None)
 

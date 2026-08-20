@@ -231,8 +231,8 @@ def test_export_honours_the_same_filters_as_the_listing(auth_client, export_tabl
     from freezegun import freeze_time
 
     with freeze_time("2026-08-19T12:00:00Z"):
-        from rest_framework_simplejwt.tokens import RefreshToken
         from rest_framework.test import APIClient
+        from rest_framework_simplejwt.tokens import RefreshToken
 
         client = APIClient()
         client.credentials(

@@ -3,7 +3,7 @@ from datetime import timedelta
 import pytest
 from django.urls import reverse
 
-from alerts.models import Alert, AlertChannel, AlertRule, AlertStatus
+from alerts.models import Alert, AlertStatus
 from alerts.services import generate_for_user
 from tables.models import Column, ColumnType, Table
 

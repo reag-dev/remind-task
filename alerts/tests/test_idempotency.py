@@ -3,7 +3,7 @@ RF12 exige explicitamente evitar envio duplicado. Estes testes atacam esse ponto
 por três lados: repetição do job, escrita concorrente e a constraint do banco.
 """
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
 from django.db import IntegrityError, transaction

@@ -9,8 +9,8 @@ resultam em 400, nunca em gravação silenciosa de lixo no `data`.
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
-from django.core.validators import EmailValidator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.validators import EmailValidator
 from django.utils.dateparse import parse_datetime
 from rest_framework import serializers
 

@@ -1,0 +1,49 @@
+# Regras de lint do projeto.
+#
+# Declaradas aqui de propósito. Sem arquivo de configuração o ruff aplica o
+# conjunto padrão da VERSÃO instalada — que muda entre releases: o mesmo código
+# passa numa máquina e acusa 165 erros na outra, e ninguém sabe qual dos dois
+# resultados é o do projeto. Um baseline que depende de quando você rodou o
+# comando não é um baseline.
+
+target-version = "py312"
+
+# 100, não 88: o código já usa nomes longos em português e assinaturas de teste
+# com muitas fixtures. Apertar mais agora só produziria quebra de linha sem
+# ganho de leitura.
+line-length = 100
+
+[lint]
+select = [
+    "F",    # pyflakes — nome indefinido, import morto, f-string sem placeholder
+    "E",    # pycodestyle (erros)
+    "W",    # pycodestyle (avisos)
+    "I",    # isort — ordem e agrupamento de imports
+    "UP",   # pyupgrade — sintaxe obsoleta para a versão alvo
+    "B",    # bugbear — armadilhas de runtime (default mutável, loop capturando var)
+    "SIM",  # simplificações com equivalência garantida
+    "DJ",   # flake8-django
+    "RUF",  # regras do próprio ruff
+]
+
+ignore = [
+    # `permission_classes = [IsAuthenticated]`, `filter_backends = [...]`,
+    # `ordering_fields = [...]`: a RUF012 quer `ClassVar[...]` em toda lista de
+    # classe. É o idioma padrão do Django e do DRF, documentado assim em ambos —
+    # anotar 45 atributos deixaria o código MENOS parecido com o resto do
+    # ecossistema em troca de nada. O risco que a regra ataca (mutação
+    # compartilhada entre instâncias) não existe aqui: essas listas são lidas,
+    # nunca alteradas.
+    "RUF012",
+]
+
+[lint.per-file-ignores]
+# Migrations do Django são geradas: reformatar significa divergir do que o
+# `makemigrations` produziria da próxima vez — e a diferença reaparece toda vez
+# que alguém rodar o comando. E501 pela largura das definições de campo; I001
+# porque o gerador escreve `import uuid` junto dos `import django.*`, num bloco
+# só, e o isort quer a stdlib separada.
+"*/migrations/*" = ["E501", "I001"]
+
+[lint.isort]
+known-first-party = ["accounts", "alerts", "config", "core", "exports", "records", "tables"]

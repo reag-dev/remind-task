@@ -34,9 +34,15 @@ Resposta esperada: `{"status": "ok", "database": "up"}`
 | `make sh` | shell dentro do container web |
 | `make migrate` | aplica migrations |
 | `make test` | roda a suite (`pytest`) |
+| `make lint` | roda o `ruff` com as regras de [`ruff.toml`](ruff.toml) |
 | `make reset` | **apaga o volume do Postgres** e sobe de novo |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
+
+O `ruff.toml` existe porque, sem arquivo de configuração, o ruff aplica o
+conjunto de regras padrão da **versão instalada** — que muda entre releases. O
+mesmo código passava numa máquina e acusava 165 erros na outra. As regras estão
+declaradas, e o repositório passa limpo.
 
 ### Build falhando com `CERTIFICATE_VERIFY_FAILED`
 
