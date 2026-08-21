@@ -68,7 +68,7 @@ services:
       # A URL é a do HOST, não `http://web:8000`. Quem faz as requisições é o
       # browser, que roda fora da rede do compose e não resolve o nome `web`.
       # O valor é embutido no bundle pelo Vite em tempo de build do módulo.
-      VITE_API_URL: http://localhost:8000/api
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
     ports:
       - "3000:3000"
     volumes:
