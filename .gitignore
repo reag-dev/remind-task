@@ -31,3 +31,9 @@ media/
 # Estado de runtime do Celery Beat (shelve): recriado a cada start.
 celerybeat-schedule*
 celerybeat.pid
+
+# --- frontend ---
+node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/*.tsbuildinfo

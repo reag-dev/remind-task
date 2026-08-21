@@ -10,7 +10,9 @@ Segurança é requisito central, não acessório: isolamento de dados por usuár
 | Banco | PostgreSQL 16 |
 | Auth | SimpleJWT + Argon2id + django-axes |
 | Assíncrono | Celery + Celery Beat + Redis |
+| Frontend | React 19 + Vite + TypeScript + TanStack Query/Table |
 | Infra | Docker Compose |
+| CI | GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)) |
 
 ---
 
@@ -19,13 +21,36 @@ Segurança é requisito central, não acessório: isolamento de dados por usuár
 Requer apenas **Docker**. Não é preciso Python local.
 
 ```bash
-cp .env.example .env          # ajuste DJANGO_SECRET_KEY se quiser
+cp .env.example .env                    # ajuste DJANGO_SECRET_KEY se quiser
+cp frontend/.env.example frontend/.env  # só se for rodar o Vite fora do container
 docker compose build
 docker compose up -d
+docker compose exec web python manage.py seed_demo
 curl http://localhost:8000/api/health/
 ```
 
-Resposta esperada: `{"status": "ok", "database": "up"}`
+Resposta esperada: `{"status": "ok", "database": "up"}`.
+
+`docker compose up -d` sobe a stack inteira, frontend incluído:
+
+| Onde | O quê |
+|---|---|
+| http://localhost:3000 | a aplicação (Vite com HMR) |
+| http://localhost:8000/api/ | a API |
+
+Entre com a conta do `seed_demo` — **demo@remind.local** / `Contrato!Vencendo#2026`.
+
+O `seed_demo` cria a conta **demo@remind.local** / `Contrato!Vencendo#2026` e a
+tabela *Contratos* do [exemplo da especificação](docs/especificacao.md#7-exemplo-de-utilização),
+com os três contratos em três estados: um vencido, um vencendo em breve e um
+futuro. As datas são relativas ao dia da execução — as do documento são
+absolutas, e usá-las literalmente deixaria os três vencidos em uma semana.
+Rodar de novo não duplica nada e **reaproxima as datas**, então a demonstração
+continua útil meses depois.
+
+O comando se recusa a rodar com `DEBUG=False` sem `--force`: a conta tem senha
+conhecida e publicada aqui, o que em produção é uma porta aberta, não um dado de
+demonstração.
 
 | Comando | O que faz |
 |---|---|
@@ -35,7 +60,13 @@ Resposta esperada: `{"status": "ok", "database": "up"}`
 | `make migrate` | aplica migrations |
 | `make test` | roda a suite (`pytest`) |
 | `make lint` | roda o `ruff` com as regras de [`ruff.toml`](ruff.toml) |
+| `make cov` | suíte + gate de cobertura em 85% ([`.coveragerc`](.coveragerc)) |
+| `make seed` | conta demo + tabela do exemplo da especificação |
 | `make reset` | **apaga o volume do Postgres** e sobe de novo |
+| `make front-test` | suíte do frontend (`vitest`) |
+| `make front-cov` | suíte + gate de cobertura em 85% ([`vitest.config.ts`](frontend/vitest.config.ts)) |
+| `make front-lint` | `eslint` + `tsc --noEmit` |
+| `make front-types` | regenera [`schema.d.ts`](frontend/src/api/schema.d.ts) a partir do OpenAPI no ar |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
 
@@ -61,11 +92,77 @@ Não use `pip install --trusted-host`: isso desliga a verificação TLS.
 
 ### Superfície de uso
 
-Não há frontend. A interface do MVP é:
-
+- `http://localhost:3000` — **a SPA** (React + Vite), a interface de quem usa o sistema
 - `http://localhost:8000/api/docs/` — Swagger UI (drf-spectacular)
 - `http://localhost:8000/api/` — DRF Browsable API
 - `http://localhost:8000/admin/` — Django Admin
+
+---
+
+## Frontend
+
+SPA em React 19 + TypeScript, servida pelo Vite. Consome a mesma API pública
+documentada acima — não há caminho privilegiado, e o que a SPA consegue fazer é
+exatamente o que qualquer cliente autenticado conseguiria.
+
+| Decisão | Por quê |
+|---|---|
+| **Tipos gerados do OpenAPI** ([`schema.d.ts`](frontend/src/api/schema.d.ts)) | O contrato é do backend. Tipos escritos à mão viram ficção assim que um serializer muda — e o CI quebra quando os dois divergem (ver abaixo). |
+| **TanStack Query** para estado de servidor | Cache, revalidação e estados de erro/carregando sem um store global replicando o que a API já sabe. |
+| **TanStack Table v9 com `tableFeatures({})`** | Paginação e ordenação são **do servidor**, e o estado deles vive na URL. Declarar as features da tabela criaria uma segunda cópia desse estado para manter em sincronia — que é a origem do bug, não a solução. |
+| **Paginação e filtros na URL** | Uma tela filtrada é linkável e sobrevive ao F5. |
+| **`access` em memória, `refresh` em cookie httpOnly** | Mesma decisão do backend: token de longa duração invisível para JavaScript. |
+
+Acessibilidade não é uma passagem final: `aria-sort` nos cabeçalhos ordenáveis,
+`aria-live` no rodapé da paginação, status de vencimento com **texto além da
+cor** — cor sozinha não é indicador — e a contagem de não lidos dentro do texto
+acessível do link, não só numa bolinha colorida.
+
+```bash
+cd frontend
+npm install
+npm run dev        # precisa da API no ar: docker compose up -d web
+npm run test       # vitest + Testing Library + MSW
+npm run typecheck  # tsc --noEmit
+npm run lint       # eslint
+```
+
+Os mocks são MSW e **paginam de verdade** — devolvem `count` maior que
+`results.length`. Um mock que sempre entrega a lista inteira esconderia
+justamente o erro que a paginação de servidor introduz.
+
+Cobertura do frontend: **94%**, gate em 85% ([`vitest.config.ts`](frontend/vitest.config.ts)),
+espelhando o `fail_under` do backend.
+
+---
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo push para
+`main` e em todo pull request, com três jobs:
+
+| Job | O que roda |
+|---|---|
+| `backend` | `ruff check` + `pytest --cov` (gate de 85% do `.coveragerc`) |
+| `frontend` | `typecheck` + `lint` + `test --coverage` |
+| `contrato` | regenera `schema.d.ts` do OpenAPI no ar e **exige diff vazio** |
+
+O job de backend roda **dentro do docker compose**, não com `services:` do
+GitHub Actions. Recriar o ambiente à mão significaria reproduzir o `init.sql`
+das extensões, o `.env` e o setup de RLS — um segundo ambiente, parecido mas não
+igual, que envelhece em silêncio até o dia em que o CI passa e a máquina de
+alguém não. Aqui `make cov` e o CI executam o mesmo comando no mesmo container.
+
+O job `contrato` é o que impede a deriva silenciosa: `schema.d.ts` é gerado a
+partir do OpenAPI que o Django serve, e nada obriga os dois a continuarem de
+acordo. Um serializer muda, o arquivo gerado fica velho, o TypeScript segue
+compilando contra o contrato **antigo**, e o erro só aparece como campo
+`undefined` em runtime. Regerar e exigir diff vazio transforma isso em build
+vermelho no PR que causou a divergência.
+
+Os dois jobs que sobem a stack fazem `cp .env.example .env` — o que também
+**valida o exemplo**: variável nova nas settings sem linha correspondente no
+`.env.example` quebra o CI, em vez de quebrar o onboarding do próximo.
 
 ---
 
@@ -75,15 +172,80 @@ Não há frontend. A interface do MVP é:
 |---|---|
 | [`docs/especificacao.md`](docs/especificacao.md) | Requisitos RF01–RF13 e RS01–RS08 |
 | [`docs/data-model.md`](docs/data-model.md) | Schema vigente, diagrama ER e as decisões de modelagem |
-| [`.claude/plans/remind-task-mvp-2026-08-19.md`](.claude/plans/remind-task-mvp-2026-08-19.md) | Plano de execução por fases |
+| [`.claude/plans/remind-task-mvp-2026-08-19.md`](.claude/plans/remind-task-mvp-2026-08-19.md) | Plano de execução do backend, por fases |
+| [`.claude/plans/remind-task-frontend-2026-08-20.md`](.claude/plans/remind-task-frontend-2026-08-20.md) | Plano do frontend, com as dez armadilhas que a API impõe ao cliente |
+
+---
+
+## Mapa de requisitos
+
+Cada requisito da [especificação](docs/especificacao.md), o código que o entrega e
+o teste que o segura. A coluna **Prova** é a que importa numa revisão: sem ela,
+"implementado" é opinião.
+
+### Funcionais
+
+| ID | Requisito | Onde | Prova |
+|---|---|---|---|
+| RF01 | Cadastro de usuário | `POST /api/auth/register/` · [accounts/views.py](accounts/views.py) | `accounts/tests/test_auth.py` |
+| RF02 | Login / logout | `/api/auth/login/`, `/logout/`, `/refresh/` | `accounts/tests/test_auth.py` |
+| RF03 | Criação de tabela do próprio dono | [tables/views.py](tables/views.py) — `perform_create` grava `user` do token | `tables/tests/test_tables.py` |
+| RF04 | Ver só as tabelas da conta | `get_queryset()` filtrado + RLS | `tests/security/test_cross_tenant.py` |
+| RF05 | Colunas configuráveis | [tables/models.py](tables/models.py) — `ColumnType` | `tables/tests/test_columns.py` |
+| RF06 | Campo de vencimento, no máximo um | índice único parcial `columns_one_due_date_per_table` | `tables/tests/test_columns.py` |
+| RF07 | Inserir registro | [records/validators.py](records/validators.py) valida contra a definição de colunas | `records/tests/test_data_validation.py` |
+| RF08 | Editar registro | [records/views.py](records/views.py) | `records/tests/test_records_crud.py` |
+| RF09 | Excluir registro | idem | `records/tests/test_records_crud.py` |
+| RF10 | Indicadores de vencimento | [records/models.py](records/models.py) — `with_due_status()`, calculado no fuso do dono | `records/tests/test_due_status.py` |
+| RF11 | Ordenação por vencimento | `ORDER BY due_date ASC NULLS LAST` + índice | `records/tests/test_ordering.py` |
+| RF12 | Notificações | [alerts/tasks.py](alerts/tasks.py) — Celery Beat a cada 15 min | `alerts/tests/test_scan_task.py`, `test_idempotency.py` |
+| RF13 | Exportação CSV | [exports/services.py](exports/services.py) — streaming | `exports/tests/test_export.py` |
+
+### Segurança
+
+| ID | Requisito | Onde | Prova |
+|---|---|---|---|
+| RS01 | Isolamento entre usuários | queryset filtrado **+** RLS no Postgres ([core/rls.py](core/rls.py)) | `tests/security/test_cross_tenant.py`, `test_queryset_layer.py`, `core/tests/test_rls.py` |
+| RS02 | Autenticação e autorização por recurso | `IsAuthenticated` + propriedade em toda view | `tests/security/test_auth_required.py` |
+| RS03 | Proteção de credenciais | Argon2id + `django-axes` (5 falhas / 15 min) | `tests/security/test_credentials.py` |
+| RS04 | Troca de ID não dá acesso | UUID público + **404, nunca 403** | `tests/security/test_cross_tenant.py` |
+| RS05 | Dados sensíveis | `columns.is_sensitive` + [core/logging.py](core/logging.py) | `tests/security/test_logging_redaction.py`, `core/tests/test_redaction.py` |
+| RS06 | Comunicação segura | [config/settings/prod.py](config/settings/prod.py) | `tests/security/test_transport.py` |
+| RS07 | Controle de sessão | JWT com rotação e blacklist de refresh | `accounts/tests/test_auth.py` |
+| RS08 | Exportação segura | reusa a queryset autorizada + [exports/csv_safety.py](exports/csv_safety.py) | `tests/security/test_export_authorization.py` |
+
+### Forma do modelo
+
+O schema vigente, com colunas, índices e as decisões que os justificam, mora em
+[`docs/data-model.md`](docs/data-model.md) — este diagrama é só o mapa das
+relações.
+
+```mermaid
+erDiagram
+    users       ||--o{ tables      : possui
+    tables      ||--o{ columns     : define
+    tables      ||--o{ records     : contem
+    tables      ||--o{ alert_rules : configura
+    records     ||--o{ alerts      : dispara
+    alert_rules ||--o{ alerts      : gera
+    users       ||--o{ alerts      : recebe
+```
+
+Um registro é **uma linha** com `data JSONB` — não uma linha por valor. A
+`due_date` é promovida para coluna nativa porque é o único campo que o sistema
+precisa ordenar e varrer. O porquê está na
+[decisão central](docs/data-model.md#decisão-central-jsonb-híbrido-não-eav-puro).
 
 ---
 
 ## Estado atual
 
-**Phases 0–7 concluídas** — MVP funcional completo e endurecido: da autenticação à exportação, com isolamento em duas camadas (queryset + Row-Level Security no Postgres) e redação de log. Falta a suíte de segurança e a documentação de uso.
+**MVP completo — backend Phases 0–9 e frontend Phases 0–8.** Da autenticação à
+exportação, com isolamento em duas camadas, redação de log, os 10 critérios de
+segurança sob teste, uma SPA consumindo a API por tipos gerados e CI cobrindo os
+dois lados. `docker compose up -d` sobe tudo.
 
-| Phase | Escopo | Status |
+| Phase | Backend | Status |
 |---|---|---|
 | 0 | Scaffold, Docker Compose, health check | ✅ |
 | 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
@@ -93,8 +255,20 @@ Não há frontend. A interface do MVP é:
 | 5 | `alerts` — regras, job Celery, inbox | ✅ |
 | 6 | `exports` — CSV seguro | ✅ |
 | 7 | Row-Level Security e endurecimento | ✅ |
-| 8 | Suite de segurança do MVP | ⬜ |
-| 9 | Documentação e seed demo | ⬜ |
+| 8 | Suíte de segurança do MVP | ✅ |
+| 9 | Documentação, schema e seed demo | ✅ |
+
+| Phase | Frontend | Status |
+|---|---|---|
+| 0 | Andaime, Vite e contrato tipado do OpenAPI | ✅ |
+| 1 | Autenticação — login, registro, refresh silencioso | ✅ |
+| 2 | Tabelas — lista, criação, exclusão | ✅ |
+| 3 | Colunas — CRUD e reordenação | ✅ |
+| 4 | Grid dinâmico e CRUD de registros | ✅ |
+| 5 | Paginação, ordenação e filtros server-side | ✅ |
+| 6 | Alertas — caixa de entrada e contador | ✅ |
+| 7 | Exportação CSV pelo browser | ✅ |
+| 8 | Testes, acessibilidade, container e CI | ✅ |
 
 ### Endpoints disponíveis
 
@@ -306,6 +480,46 @@ Duas exceções conscientes:
 
 O desenho, as policies e as armadilhas estão em
 [`docs/data-model.md`](docs/data-model.md#8-rls-um-papel-sem-login-não-dois-usuários-de-banco).
+
+### Os 10 critérios da especificação estão sob teste
+
+`tests/security/` existe para uma coisa só: **falhar quando uma proteção sumir**.
+Os testes de cada app já demonstram, de passagem, que as defesas funcionam hoje.
+O que faltava era a rede que quebra a build quando alguém apaga um filtro de
+queryset ou troca uma classe de permissão.
+
+| Critério (seção 10) | Prova |
+|---|---|
+| A não acessa / edita / exclui recurso de B | `test_cross_tenant.py` — todo tipo de recurso × todo método HTTP |
+| Acesso indevido tratado com segurança | 404 em tudo, **nunca 403** — 403 confirmaria que o recurso existe |
+| Endpoints protegidos exigem autenticação | `test_auth_required.py` — 401 sem token e com token inventado |
+| Senha nunca em texto puro | `test_credentials.py` — confere a LINHA inteira no banco, não só a coluna |
+| HTTPS em produção | `test_transport.py` — roda `check --deploy --fail-level WARNING` num subprocesso |
+| Dado sensível fora do log | `test_logging_redaction.py` — fluxo CRUD completo, o CPF não aparece em nenhuma linha |
+| Export exige autenticação e autorização | `test_export_authorization.py` |
+| Alerta não expõe dado sensível | payload mínimo; marcar a coluna como sensível protege até os alertas já emitidos |
+
+Dois testes valem por si, porque **crescem com o app** em vez de congelar uma
+lista:
+
+- `test_every_api_route_is_classified` varre a URLconf e falha se aparecer uma
+  rota que ninguém declarou como pública ou protegida. Endpoint novo sem
+  permissão não passa despercebido — a decisão vira revisão de código.
+- `test_every_configured_handler_redacts` falha se alguém acrescentar um handler
+  de log sem o filtro de redação. O filtro fica no handler, não no logger (é a
+  única posição que alcança `django.request` e bibliotecas), então cada handler
+  novo precisa da sua própria linha.
+
+E um terceiro, que nasceu de sabotar o código para ver se a suíte reagia:
+`test_queryset_layer.py` testa a **primeira** barreira com a RLS fora de cena.
+Apagar `filter(user=...)` de um `get_queryset()` não quebrava nenhum outro teste
+— a RLS filtrava a mesma consulta no banco e a API continuava correta. É a defesa
+em profundidade funcionando, mas deixaria a camada 1 sumir sem sinal. O teste
+usa `force_authenticate`, que pula as classes de autenticação e portanto não
+entra no papel `remind_app`; cada caso confere esse pressuposto antes de afirmar
+qualquer coisa.
+
+Cobertura do código de domínio: **92%**, gate em 85% (`make cov`).
 
 ### Regras estruturais garantidas pelo banco
 

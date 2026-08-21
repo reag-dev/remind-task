@@ -162,18 +162,31 @@ A cada X minutos → busca registros próximos do vencimento → verifica se o a
 
 ## 10. Critérios de segurança do MVP
 
-Validados pela suite da Phase 8 (`tests/security/`):
+Todos cobertos pela suíte da Phase 8 (`tests/security/`). Cada linha aponta o
+teste que **falha se a proteção sumir** — é essa a função da suíte, não
+demonstrar que a proteção existe hoje.
 
-- [ ] Usuário A não consegue acessar tabelas do usuário B.
-- [ ] Usuário A não consegue editar registros do usuário B.
-- [ ] Usuário A não consegue excluir registros do usuário B.
-- [ ] Endpoints protegidos exigem autenticação.
-- [ ] Senhas não são armazenadas em texto puro.
-- [ ] Dados trafegam via HTTPS em produção.
-- [ ] Dados sensíveis não aparecem em logs desnecessariamente.
-- [ ] Exportação CSV exige autenticação e autorização.
-- [ ] Tentativas de acesso indevido são tratadas de forma segura.
-- [ ] Alertas não expõem informações sensíveis desnecessariamente.
+- [x] Usuário A não consegue acessar tabelas do usuário B.
+      → `test_cross_tenant.py::test_reading_a_foreign_resource_returns_404`
+- [x] Usuário A não consegue editar registros do usuário B.
+      → `test_cross_tenant.py::test_writing_to_a_foreign_resource_never_succeeds`
+- [x] Usuário A não consegue excluir registros do usuário B.
+      → idem, mais `test_no_foreign_resource_was_touched`
+- [x] Endpoints protegidos exigem autenticação.
+      → `test_auth_required.py::test_protected_routes_reject_anonymous_requests`
+      (e `test_every_api_route_is_classified`, que obriga rota nova a se declarar)
+- [x] Senhas não são armazenadas em texto puro.
+      → `test_credentials.py::test_the_plaintext_password_is_nowhere_in_the_users_row`
+- [x] Dados trafegam via HTTPS em produção.
+      → `test_transport.py::test_production_settings_pass_djangos_own_deployment_checks`
+- [x] Dados sensíveis não aparecem em logs desnecessariamente.
+      → `test_logging_redaction.py::test_a_full_crud_flow_never_logs_the_sensitive_value`
+- [x] Exportação CSV exige autenticação e autorização.
+      → `test_export_authorization.py`
+- [x] Tentativas de acesso indevido são tratadas de forma segura.
+      → `test_cross_tenant.py::test_a_foreign_resource_is_never_answered_with_403`
+- [x] Alertas não expõem informações sensíveis desnecessariamente.
+      → `test_logging_redaction.py::test_the_alert_payload_never_carries_a_sensitive_column`
 
 ## 11. Diferencial
 

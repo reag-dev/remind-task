@@ -1,0 +1,132 @@
+# CI do projeto — o gate que a Phase 8 do plano do frontend pedia.
+#
+# O job de backend roda DENTRO do docker compose, e não com `services:` do
+# GitHub Actions. Reproduzir o ambiente à mão exigiria recriar o init.sql das
+# extensões, as variáveis do .env e o setup de RLS — um segundo ambiente,
+# parecido mas não igual, que envelhece em silêncio até o dia em que o CI passa
+# e a máquina de alguém não (ou o contrário). Aqui `make cov` e o CI executam
+# literalmente o mesmo comando no mesmo container.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Um push novo cancela a execução anterior do mesmo branch: sem isso, uma
+# sequência rápida de commits enfileira builds que ninguém vai ler.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend — ruff + pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # O compose declara `env_file: .env`, que não é versionado. Copiar o
+      # exemplo também o VALIDA: se alguém acrescentar uma variável obrigatória
+      # às settings sem registrá-la no .env.example, este job quebra — que é
+      # exatamente quando se quer descobrir, e não no onboarding do próximo.
+      - name: Preparar .env
+        run: cp .env.example .env
+
+      - name: Subir a stack
+        run: docker compose up -d --wait db redis web
+
+      - name: Lint
+        run: docker compose exec -T web ruff check .
+
+      # `--cov` carrega o fail_under = 85 do .coveragerc. O gate de cobertura é
+      # o do backend, não um número escrito de novo aqui.
+      - name: Testes + gate de cobertura
+        run: docker compose exec -T web pytest --cov
+
+      # Logs do container quando algo quebra. Sem isto, uma falha de boot
+      # aparece como um passo vermelho sem nenhuma pista do motivo.
+      - name: Logs (em caso de falha)
+        if: failure()
+        run: docker compose logs --no-color
+
+  frontend:
+    name: frontend — typecheck + lint + testes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci`, não `install`: falha se package.json e lockfile discordarem, em
+      # vez de resolver versões novas e testar algo diferente do que se commitou.
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      # Os thresholds de 85% vivem em vitest.config.ts, espelhando o .coveragerc.
+      - name: Testes + cobertura
+        run: npm run test -- --coverage
+
+  # Detector de deriva entre o schema do backend e o cliente tipado.
+  #
+  # `schema.d.ts` é gerado a partir do OpenAPI que o Django serve. Nada obriga
+  # os dois a continuarem de acordo: um serializer muda, o arquivo gerado fica
+  # velho, o TypeScript segue compilando contra o contrato ANTIGO e o erro só
+  # aparece como campo `undefined` em runtime. Regerar e exigir diff vazio
+  # transforma isso em build vermelho no PR que causou a divergência.
+  contrato:
+    name: contrato — schema x cliente tipado
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Preparar .env
+        run: cp .env.example .env
+
+      - name: Subir a API
+        run: docker compose up -d --wait db redis web
+
+      - name: Instalar dependências
+        working-directory: frontend
+        run: npm ci
+
+      # `api:types` gera E passa o prettier. Os dois passos são necessários para
+      # este job significar alguma coisa: o openapi-typescript indenta com o
+      # estilo dele, o repositório guarda o arquivo formatado, e sem normalizar
+      # o diff nunca seria vazio — o job falharia sempre, por formatação, e
+      # seria desligado por inútil antes de pegar a primeira deriva de verdade.
+      - name: Regerar os tipos a partir do schema no ar
+        working-directory: frontend
+        run: npm run api:types
+
+      - name: Exigir diff vazio
+        run: |
+          if ! git diff --exit-code --stat -- frontend/src/api/schema.d.ts; then
+            echo "::error file=frontend/src/api/schema.d.ts::O schema da API mudou e os tipos gerados não foram atualizados. Rode 'npm run api:types' no frontend e commite o resultado."
+            git diff -- frontend/src/api/schema.d.ts
+            exit 1
+          fi
+
+      - name: Logs (em caso de falha)
+        if: failure()
+        run: docker compose logs --no-color

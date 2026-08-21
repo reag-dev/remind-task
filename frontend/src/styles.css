@@ -1,0 +1,674 @@
+:root {
+  --texto: #1a1c1e;
+  --fundo: #ffffff;
+  --sutil: #5c636a;
+  --borda: #d7dbdf;
+  --acento: #1b4dd8;
+  --ok: #0a7c42;
+  --erro: #b3261e;
+
+  font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--texto);
+  background: var(--fundo);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.andaime,
+.formulario {
+  max-width: 26rem;
+  margin: 4rem auto;
+  padding: 0 1rem;
+}
+
+.formulario form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.formulario label {
+  font-weight: 600;
+  margin-top: 0.75rem;
+}
+
+.formulario input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario input:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  /* Contorno explícito: alguns resets apagam o padrão do browser e a navegação
+     por teclado fica sem indicação de foco. */
+  outline: 2px solid var(--acento);
+  outline-offset: 2px;
+}
+
+button {
+  margin-top: 1.25rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--acento);
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.ok {
+  color: var(--ok);
+}
+
+.erro {
+  color: var(--erro);
+  margin: 0.5rem 0 0;
+}
+
+ul.erro {
+  padding-left: 1.1rem;
+}
+
+.carregando {
+  margin: 4rem auto;
+  max-width: 26rem;
+  padding: 0 1rem;
+  color: var(--sutil);
+}
+
+/* ---------------------------------------------------------- moldura */
+
+.cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--borda);
+}
+
+.cabecalho-direita {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.marca {
+  font-weight: 700;
+  color: inherit;
+  text-decoration: none;
+}
+
+.conteudo {
+  max-width: 52rem;
+  margin: 2rem auto;
+  padding: 0 1.25rem;
+}
+
+.sutil {
+  color: var(--sutil);
+  font-size: 0.9rem;
+}
+
+.vazio {
+  color: var(--sutil);
+  border: 1px dashed var(--borda);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.titulo-com-acao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* ---------------------------------------------------------- botões */
+
+.botao,
+button.secundario,
+button.destrutivo {
+  display: inline-block;
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  margin-top: 0;
+}
+
+.botao {
+  background: var(--acento);
+  color: #fff;
+  border: 1px solid transparent;
+}
+
+button.secundario {
+  background: transparent;
+  color: var(--texto);
+  border: 1px solid var(--borda);
+}
+
+button.destrutivo {
+  background: transparent;
+  color: var(--erro);
+  border: 1px solid var(--erro);
+}
+
+button.ligacao {
+  background: none;
+  border: none;
+  color: var(--acento);
+  text-decoration: underline;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+/* ---------------------------------------------------------- lista de tabelas */
+
+.lista-tabelas {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.linha-tabela {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.nome-tabela {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--texto);
+}
+
+.linha-tabela p {
+  margin: 0.25rem 0 0;
+}
+
+.meta {
+  font-size: 0.85rem;
+}
+
+.acoes {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.formulario-inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  width: 100%;
+}
+
+.formulario-inline input {
+  flex: 1 1 12rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario-inline button {
+  margin-top: 0;
+}
+
+.formulario textarea {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+  resize: vertical;
+}
+
+/* ---------------------------------------------------------- diálogo */
+
+.dialogo {
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 1.5rem;
+  max-width: 30rem;
+}
+
+.dialogo::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.dialogo h2 {
+  margin-top: 0;
+}
+
+.dialogo-acoes {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+/* Visível para leitor de tela, invisível na tela. Um `display: none` sumiria
+   das duas — e o input inline ficaria sem rótulo acessível. */
+.oculto-visual {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------------------------------------------------------- colunas */
+
+.cartao {
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin: 1.5rem 0;
+  max-width: none;
+}
+
+.cartao h2 {
+  margin-top: 0;
+}
+
+.formulario select {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.formulario select:disabled {
+  background: #f3f4f6;
+  color: var(--sutil);
+}
+
+label.caixa {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+label.caixa input {
+  width: auto;
+}
+
+.acoes-formulario {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+.acoes-formulario button {
+  margin-top: 0;
+}
+
+.aviso {
+  border: 1px solid #f0c36d;
+  background: #fff8e6;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+}
+
+.lista-colunas {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  counter-reset: coluna;
+}
+
+.linha-coluna {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.coluna-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.coluna-info p {
+  margin: 0.2rem 0 0;
+}
+
+.coluna-info code {
+  background: #f3f4f6;
+  padding: 0 0.25rem;
+  border-radius: 3px;
+}
+
+.ordenar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+.ordenar button {
+  padding: 0.1rem 0.45rem;
+  line-height: 1.3;
+}
+
+/* ---------------------------------------------------------- grid */
+
+.rolagem-horizontal {
+  overflow-x: auto;
+  margin-top: 1.5rem;
+}
+
+table.grid {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.94rem;
+}
+
+table.grid th,
+table.grid td {
+  text-align: left;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--borda);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+table.grid th {
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--sutil);
+  border-bottom-width: 2px;
+}
+
+table.grid tbody tr:hover {
+  background: #fafbfc;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  font-size: 0.85rem;
+}
+
+.mascara {
+  letter-spacing: 0.12em;
+  text-decoration: none;
+}
+
+.revelado {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+/* --- selos de vencimento (RF10) ---
+   Cada selo carrega o TEXTO do estado além da cor. Cor sozinha não é
+   indicador: exclui quem tem daltonismo, e a spec pede indicadores visuais,
+   não uma paleta. */
+
+.selo {
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  border: 1px solid;
+}
+
+.selo-overdue {
+  color: #8c1d18;
+  background: #fceceb;
+  border-color: #f0b4b0;
+}
+
+.selo-due_today {
+  color: #8a4b00;
+  background: #fff4e5;
+  border-color: #f2c98a;
+}
+
+.selo-due_soon {
+  color: #7a5c00;
+  background: #fffbe6;
+  border-color: #e8d68a;
+}
+
+.selo-on_track {
+  color: #0a5c33;
+  background: #eaf6ef;
+  border-color: #a9d8bf;
+}
+
+.selo-no_due,
+.selo-desconhecido {
+  color: var(--sutil);
+  background: #f4f5f6;
+  border-color: var(--borda);
+}
+
+.secundario-link {
+  background: transparent;
+  color: var(--texto);
+  border: 1px solid var(--borda);
+}
+
+/* ---------------------------------------------------------- filtros e paginação */
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: center;
+  margin-top: 1.5rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+}
+
+.filtro-status,
+.filtro-datas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.filtro-chip {
+  padding: 0.2rem 0.7rem;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.88rem;
+  cursor: pointer;
+  margin-top: 0;
+}
+
+.filtro-chip.ativo {
+  background: var(--acento);
+  border-color: var(--acento);
+  color: #fff;
+}
+
+.filtro-datas input {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.paginacao {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.paginacao p {
+  margin: 0;
+}
+
+.paginacao-controles {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.paginacao-controles select {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.paginacao-controles button {
+  margin-top: 0;
+}
+
+.cabecalho-ordenavel {
+  font: inherit;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--sutil);
+  text-decoration: none;
+}
+
+.cabecalho-ordenavel:hover {
+  color: var(--acento);
+}
+
+/* ---------------------------------------------------------- alertas */
+
+.link-alertas {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+
+.badge {
+  display: inline-block;
+  min-width: 1.35rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: var(--erro);
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.35rem;
+  text-align: center;
+}
+
+.lista-alertas,
+.lista-regras {
+  list-style: none;
+  padding: 0;
+  margin: 1.25rem 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.linha-alerta,
+.linha-regra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+.alerta-corpo {
+  min-width: 0;
+}
+
+.alerta-corpo p {
+  margin: 0.2rem 0 0;
+}
+
+.aviso-inline {
+  color: #8a4b00;
+  font-size: 0.88rem;
+}
+
+.linha-regra {
+  gap: 0.5rem;
+  justify-content: flex-start;
+}
+
+.linha-regra .acoes {
+  margin-left: auto;
+}
+
+/* ---------------------------------------------------------- exportação */
+
+.rodape-grid {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.exportar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.exportar select {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  font: inherit;
+}
+
+.exportar button {
+  margin-top: 0;
+}

@@ -88,9 +88,16 @@ class RedactingFilter(logging.Filter):
     Redige mensagem, argumentos e traceback antes de qualquer handler formatar.
 
     É um Filter e não um Formatter de propósito: filtros rodam antes da
-    formatação, então a redação vale para qualquer formato de saída (texto,
-    JSON, o que vier depois) e também para os handlers que outra pessoa
-    acrescentar mais tarde.
+    formatação, então a redação vale para qualquer formato de saída — texto,
+    JSON, o que vier depois.
+
+    Fica ligado ao HANDLER, não ao logger. É a única posição que alcança também
+    o que vem de `django.request` e de bibliotecas: filtros de logger não valem
+    para registros propagados de loggers filhos. O preço é que cada handler novo
+    precisa da sua própria linha de `filters` em `LOGGING` — um handler de
+    arquivo ou de APM acrescentado sem ela publicaria tudo em texto puro.
+    `tests/security/test_logging_redaction.py::test_every_configured_handler_redacts`
+    é o tripwire disso.
     """
 
     def filter(self, record: logging.LogRecord) -> bool:

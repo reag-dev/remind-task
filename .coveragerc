@@ -1,0 +1,35 @@
+# Cobertura da Phase 8 — gate em 85% (make cov).
+#
+# O que fica de FORA da medição, e por quê: incluir esses arquivos não torna o
+# número mais honesto, torna menos. Teste tem 100% por construção — contá-lo
+# infla o total e esconde código de domínio sem exercício. Migration é gerada.
+# wsgi/asgi/manage só rodam em processo real.
+
+[run]
+source = .
+branch = True
+omit =
+    manage.py
+    config/asgi.py
+    config/wsgi.py
+    */migrations/*
+    */tests/*
+    tests/*
+    conftest.py
+
+# `config/settings/prod.py` aparece com 0% e está correto assim: ele É testado,
+# em `tests/security/test_transport.py`, mas num SUBPROCESSO — importá-lo no
+# processo de teste contaminaria as settings da sessão inteira, porque prod.py
+# escreve no mesmo dicionário DATABASES que base.py exporta. O coverage do
+# processo pai não enxerga subprocesso. Omitir esconderia o arquivo; deixá-lo
+# visível com esta nota é mais honesto.
+
+[report]
+# O gate da Phase 8. Vale para `coverage report` e para `pytest --cov`.
+fail_under = 85
+show_missing = True
+skip_covered = True
+exclude_also =
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    def __repr__
