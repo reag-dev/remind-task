@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "format": "prettier --write src",
-    "api:types": "openapi-typescript http://localhost:8000/api/schema/ -o src/api/schema.d.ts",
+    "api:types": "openapi-typescript http://localhost:8000/api/schema/ -o src/api/schema.d.ts && prettier --write src/api/schema.d.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },

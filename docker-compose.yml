@@ -59,5 +59,29 @@ services:
     <<: *django
     command: celery -A config beat -l info
 
+  frontend:
+    build:
+      # Contexto na raiz para alcançar `docker/certs/` — ver frontend/Dockerfile.
+      context: .
+      dockerfile: frontend/Dockerfile
+    environment:
+      # A URL é a do HOST, não `http://web:8000`. Quem faz as requisições é o
+      # browser, que roda fora da rede do compose e não resolve o nome `web`.
+      # O valor é embutido no bundle pelo Vite em tempo de build do módulo.
+      VITE_API_URL: http://localhost:8000/api
+    ports:
+      - "3000:3000"
+    volumes:
+      # Código do host montado por cima da imagem, para o HMR enxergar as
+      # edições.
+      - ./frontend:/app
+      # Volume anônimo protegendo `node_modules` da imagem: sem ele, o bind
+      # mount acima cobriria o diretório com o do host — vazio numa máquina sem
+      # Node, ou com binários da arquitetura errada numa que tenha.
+      - /app/node_modules
+    depends_on:
+      web:
+        condition: service_healthy
+
 volumes:
   pgdata:

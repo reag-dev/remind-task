@@ -18,13 +18,19 @@ const USUARIO = {
   created_at: "2026-08-20T12:00:00Z",
 };
 
+/** Quantos não lidos o handler de `/alerts/` devolve. Ver `esperarBadge`. */
+const NAO_LIDOS = 2;
+
 function montar() {
   // O `QueryClientProvider` e o handler de `/alerts/` entraram na Phase 6: o
   // Layout passou a montar o BadgeAlertas, que consulta a inbox. Sem os dois,
   // todo teste que renderiza a moldura quebra — foi assim que este quebrou.
+  //
+  // A contagem é > 0 de propósito: com 0 o badge não renderiza nada, e não
+  // haveria no DOM nenhum sinal de que a consulta terminou. Ver `esperarBadge`.
   servidor.use(
     http.get(`${API}/alerts/`, () =>
-      HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+      HttpResponse.json({ count: NAO_LIDOS, next: null, previous: null, results: [] }),
     ),
   );
 
@@ -49,6 +55,23 @@ function montar() {
   );
 }
 
+/**
+ * Espera a consulta de alertas TERMINAR, e não só a moldura aparecer.
+ *
+ * O BadgeAlertas só monta depois que a RotaProtegida autentica, então o fetch
+ * de `/alerts/` começa tarde — depois da última asserção de um teste que só
+ * verifique o e-mail e o miolo. A requisição então aterrissava durante o
+ * `afterEach`, com os handlers já resetados, e o MSW gritava "sem handler" num
+ * teste verde. Verde porque a rejeição morre dentro do estado da query, sem
+ * ninguém para observá-la: exatamente o vazamento que `onUnhandledRequest:
+ * "error"` existe para denunciar, e que passava batido.
+ *
+ * Esperar o badge no DOM prende a requisição dentro do corpo do teste.
+ */
+function esperarBadge() {
+  return screen.findByLabelText(`${NAO_LIDOS} não lidos`);
+}
+
 describe("Layout", () => {
   it("identifica a conta e renderiza o conteúdo da rota", async () => {
     servidor.use(
@@ -59,6 +82,7 @@ describe("Layout", () => {
 
     expect(await screen.findByText("demo@remind.local")).toBeInTheDocument();
     expect(screen.getByText("miolo")).toBeInTheDocument();
+    expect(await esperarBadge()).toBeInTheDocument();
   });
 
   it("chama o logout do backend ao sair, não só limpa o estado local", async () => {
@@ -75,6 +99,9 @@ describe("Layout", () => {
     const usuario = digitador();
 
     await screen.findByText("demo@remind.local");
+    // Antes de clicar: sair desmonta o Layout, e uma consulta ainda em voo
+    // aterrissaria fora do teste.
+    await esperarBadge();
     await usuario.click(screen.getByRole("button", { name: "Sair" }));
 
     // Limpar só o token do lado do cliente deixaria o refresh válido por 7 dias

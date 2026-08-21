@@ -1,7 +1,7 @@
 # Plan: remind-task — Frontend SPA
 
 **Date:** 2026-08-20
-**Status:** Phases 0-7 concluídas em 2026-08-20; Phase 8 pendente
+**Status:** concluído — Phases 0-7 em 2026-08-20; Phase 8 em 2026-08-21
 (plano revisto em 2026-08-20: TanStack Table adotado, paginação promovida a fase própria)
 **Stack:** React 19 + Vite + TypeScript + TanStack Query + TanStack Table + React Router
 **Plano irmão:** [`remind-task-mvp-2026-08-19.md`](remind-task-mvp-2026-08-19.md) (backend, concluído)

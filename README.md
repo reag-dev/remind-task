@@ -10,7 +10,9 @@ Segurança é requisito central, não acessório: isolamento de dados por usuár
 | Banco | PostgreSQL 16 |
 | Auth | SimpleJWT + Argon2id + django-axes |
 | Assíncrono | Celery + Celery Beat + Redis |
+| Frontend | React 19 + Vite + TypeScript + TanStack Query/Table |
 | Infra | Docker Compose |
+| CI | GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)) |
 
 ---
 
@@ -19,7 +21,8 @@ Segurança é requisito central, não acessório: isolamento de dados por usuár
 Requer apenas **Docker**. Não é preciso Python local.
 
 ```bash
-cp .env.example .env          # ajuste DJANGO_SECRET_KEY se quiser
+cp .env.example .env                    # ajuste DJANGO_SECRET_KEY se quiser
+cp frontend/.env.example frontend/.env  # só se for rodar o Vite fora do container
 docker compose build
 docker compose up -d
 docker compose exec web python manage.py seed_demo
@@ -27,6 +30,15 @@ curl http://localhost:8000/api/health/
 ```
 
 Resposta esperada: `{"status": "ok", "database": "up"}`.
+
+`docker compose up -d` sobe a stack inteira, frontend incluído:
+
+| Onde | O quê |
+|---|---|
+| http://localhost:3000 | a aplicação (Vite com HMR) |
+| http://localhost:8000/api/ | a API |
+
+Entre com a conta do `seed_demo` — **demo@remind.local** / `Contrato!Vencendo#2026`.
 
 O `seed_demo` cria a conta **demo@remind.local** / `Contrato!Vencendo#2026` e a
 tabela *Contratos* do [exemplo da especificação](docs/especificacao.md#7-exemplo-de-utilização),
@@ -51,6 +63,10 @@ demonstração.
 | `make cov` | suíte + gate de cobertura em 85% ([`.coveragerc`](.coveragerc)) |
 | `make seed` | conta demo + tabela do exemplo da especificação |
 | `make reset` | **apaga o volume do Postgres** e sobe de novo |
+| `make front-test` | suíte do frontend (`vitest`) |
+| `make front-cov` | suíte + gate de cobertura em 85% ([`vitest.config.ts`](frontend/vitest.config.ts)) |
+| `make front-lint` | `eslint` + `tsc --noEmit` |
+| `make front-types` | regenera [`schema.d.ts`](frontend/src/api/schema.d.ts) a partir do OpenAPI no ar |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
 
@@ -76,11 +92,77 @@ Não use `pip install --trusted-host`: isso desliga a verificação TLS.
 
 ### Superfície de uso
 
-Não há frontend. A interface do MVP é:
-
+- `http://localhost:3000` — **a SPA** (React + Vite), a interface de quem usa o sistema
 - `http://localhost:8000/api/docs/` — Swagger UI (drf-spectacular)
 - `http://localhost:8000/api/` — DRF Browsable API
 - `http://localhost:8000/admin/` — Django Admin
+
+---
+
+## Frontend
+
+SPA em React 19 + TypeScript, servida pelo Vite. Consome a mesma API pública
+documentada acima — não há caminho privilegiado, e o que a SPA consegue fazer é
+exatamente o que qualquer cliente autenticado conseguiria.
+
+| Decisão | Por quê |
+|---|---|
+| **Tipos gerados do OpenAPI** ([`schema.d.ts`](frontend/src/api/schema.d.ts)) | O contrato é do backend. Tipos escritos à mão viram ficção assim que um serializer muda — e o CI quebra quando os dois divergem (ver abaixo). |
+| **TanStack Query** para estado de servidor | Cache, revalidação e estados de erro/carregando sem um store global replicando o que a API já sabe. |
+| **TanStack Table v9 com `tableFeatures({})`** | Paginação e ordenação são **do servidor**, e o estado deles vive na URL. Declarar as features da tabela criaria uma segunda cópia desse estado para manter em sincronia — que é a origem do bug, não a solução. |
+| **Paginação e filtros na URL** | Uma tela filtrada é linkável e sobrevive ao F5. |
+| **`access` em memória, `refresh` em cookie httpOnly** | Mesma decisão do backend: token de longa duração invisível para JavaScript. |
+
+Acessibilidade não é uma passagem final: `aria-sort` nos cabeçalhos ordenáveis,
+`aria-live` no rodapé da paginação, status de vencimento com **texto além da
+cor** — cor sozinha não é indicador — e a contagem de não lidos dentro do texto
+acessível do link, não só numa bolinha colorida.
+
+```bash
+cd frontend
+npm install
+npm run dev        # precisa da API no ar: docker compose up -d web
+npm run test       # vitest + Testing Library + MSW
+npm run typecheck  # tsc --noEmit
+npm run lint       # eslint
+```
+
+Os mocks são MSW e **paginam de verdade** — devolvem `count` maior que
+`results.length`. Um mock que sempre entrega a lista inteira esconderia
+justamente o erro que a paginação de servidor introduz.
+
+Cobertura do frontend: **94%**, gate em 85% ([`vitest.config.ts`](frontend/vitest.config.ts)),
+espelhando o `fail_under` do backend.
+
+---
+
+## CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo push para
+`main` e em todo pull request, com três jobs:
+
+| Job | O que roda |
+|---|---|
+| `backend` | `ruff check` + `pytest --cov` (gate de 85% do `.coveragerc`) |
+| `frontend` | `typecheck` + `lint` + `test --coverage` |
+| `contrato` | regenera `schema.d.ts` do OpenAPI no ar e **exige diff vazio** |
+
+O job de backend roda **dentro do docker compose**, não com `services:` do
+GitHub Actions. Recriar o ambiente à mão significaria reproduzir o `init.sql`
+das extensões, o `.env` e o setup de RLS — um segundo ambiente, parecido mas não
+igual, que envelhece em silêncio até o dia em que o CI passa e a máquina de
+alguém não. Aqui `make cov` e o CI executam o mesmo comando no mesmo container.
+
+O job `contrato` é o que impede a deriva silenciosa: `schema.d.ts` é gerado a
+partir do OpenAPI que o Django serve, e nada obriga os dois a continuarem de
+acordo. Um serializer muda, o arquivo gerado fica velho, o TypeScript segue
+compilando contra o contrato **antigo**, e o erro só aparece como campo
+`undefined` em runtime. Regerar e exigir diff vazio transforma isso em build
+vermelho no PR que causou a divergência.
+
+Os dois jobs que sobem a stack fazem `cp .env.example .env` — o que também
+**valida o exemplo**: variável nova nas settings sem linha correspondente no
+`.env.example` quebra o CI, em vez de quebrar o onboarding do próximo.
 
 ---
 
@@ -90,7 +172,8 @@ Não há frontend. A interface do MVP é:
 |---|---|
 | [`docs/especificacao.md`](docs/especificacao.md) | Requisitos RF01–RF13 e RS01–RS08 |
 | [`docs/data-model.md`](docs/data-model.md) | Schema vigente, diagrama ER e as decisões de modelagem |
-| [`.claude/plans/remind-task-mvp-2026-08-19.md`](.claude/plans/remind-task-mvp-2026-08-19.md) | Plano de execução por fases |
+| [`.claude/plans/remind-task-mvp-2026-08-19.md`](.claude/plans/remind-task-mvp-2026-08-19.md) | Plano de execução do backend, por fases |
+| [`.claude/plans/remind-task-frontend-2026-08-20.md`](.claude/plans/remind-task-frontend-2026-08-20.md) | Plano do frontend, com as dez armadilhas que a API impõe ao cliente |
 
 ---
 
@@ -157,9 +240,12 @@ precisa ordenar e varrer. O porquê está na
 
 ## Estado atual
 
-**MVP completo — Phases 0–9.** Da autenticação à exportação, com isolamento em duas camadas, redação de log, os 10 critérios de segurança sob teste e uma conta demo pronta. O plano parava em "roda em Docker Compose local com testes verdes"; é onde está.
+**MVP completo — backend Phases 0–9 e frontend Phases 0–8.** Da autenticação à
+exportação, com isolamento em duas camadas, redação de log, os 10 critérios de
+segurança sob teste, uma SPA consumindo a API por tipos gerados e CI cobrindo os
+dois lados. `docker compose up -d` sobe tudo.
 
-| Phase | Escopo | Status |
+| Phase | Backend | Status |
 |---|---|---|
 | 0 | Scaffold, Docker Compose, health check | ✅ |
 | 1 | `accounts` — usuário customizado, JWT, Argon2, axes | ✅ |
@@ -171,6 +257,18 @@ precisa ordenar e varrer. O porquê está na
 | 7 | Row-Level Security e endurecimento | ✅ |
 | 8 | Suíte de segurança do MVP | ✅ |
 | 9 | Documentação, schema e seed demo | ✅ |
+
+| Phase | Frontend | Status |
+|---|---|---|
+| 0 | Andaime, Vite e contrato tipado do OpenAPI | ✅ |
+| 1 | Autenticação — login, registro, refresh silencioso | ✅ |
+| 2 | Tabelas — lista, criação, exclusão | ✅ |
+| 3 | Colunas — CRUD e reordenação | ✅ |
+| 4 | Grid dinâmico e CRUD de registros | ✅ |
+| 5 | Paginação, ordenação e filtros server-side | ✅ |
+| 6 | Alertas — caixa de entrada e contador | ✅ |
+| 7 | Exportação CSV pelo browser | ✅ |
+| 8 | Testes, acessibilidade, container e CI | ✅ |
 
 ### Endpoints disponíveis
 

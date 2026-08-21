@@ -13,3 +13,11 @@ htmlcov
 .env
 docs
 *.md
+
+# Frontend: as deps são instaladas pelo `npm ci` da imagem, para o SO e a
+# arquitetura do container. Copiar do host arrasta binários nativos compilados
+# para outra plataforma — e é como o build quebra de forma difícil de ler.
+frontend/node_modules
+frontend/dist
+frontend/coverage
+frontend/.env
