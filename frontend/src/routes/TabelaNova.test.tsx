@@ -1,10 +1,9 @@
 import { screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it } from "vitest";
 
 import { API, servidor } from "../test/servidor.ts";
-import { renderizar } from "../test/util.tsx";
+import { digitador, renderizar } from "../test/util.tsx";
 import { TabelaNova } from "./TabelaNova.tsx";
 
 const CRIADA = {
@@ -33,7 +32,7 @@ describe("TabelaNova", () => {
       }),
     );
     renderizar(<TabelaNova />, { rota: "/tabelas/nova" });
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.type(screen.getByLabelText("Nome"), "  Contratos  ");
     await usuario.click(screen.getByRole("button", { name: /criar tabela/i }));
@@ -56,7 +55,7 @@ describe("TabelaNova", () => {
       ),
     );
     renderizar(<TabelaNova />, { rota: "/tabelas/nova" });
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.type(screen.getByLabelText("Nome"), "Contratos");
     await usuario.click(screen.getByRole("button", { name: /criar tabela/i }));
@@ -81,7 +80,7 @@ describe("TabelaNova", () => {
       http.post(`${API}/tables/`, () => HttpResponse.json({}, { status: 500 })),
     );
     renderizar(<TabelaNova />, { rota: "/tabelas/nova" });
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.type(screen.getByLabelText("Nome"), "Contratos");
     await usuario.click(screen.getByRole("button", { name: /criar tabela/i }));

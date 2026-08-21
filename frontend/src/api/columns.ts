@@ -56,10 +56,7 @@ export function excluirColuna(tabelaId: string, colunaId: string): Promise<void>
  * inteira, aplicada numa transação só. A constraint de posição é DEFERRABLE
  * justamente para os estados intermediários duplicados não quebrarem nada.
  */
-export function reordenarColunas(
-  tabelaId: string,
-  ordem: string[],
-): Promise<Coluna[]> {
+export function reordenarColunas(tabelaId: string, ordem: string[]): Promise<Coluna[]> {
   return request<Coluna[]>(`/tables/${tabelaId}/columns/reorder/`, {
     method: "PATCH",
     body: { order: ordem },

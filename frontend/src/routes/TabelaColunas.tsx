@@ -35,7 +35,9 @@ export function TabelaColunas() {
 
     return (
       <p className={naoEncontrada ? "vazio" : "erro"} role="alert">
-        {naoEncontrada ? "Tabela não encontrada." : "Não foi possível carregar as colunas."}{" "}
+        {naoEncontrada
+          ? "Tabela não encontrada."
+          : "Não foi possível carregar as colunas."}{" "}
         <Link to="/">Voltar para suas tabelas</Link>
       </p>
     );
@@ -53,7 +55,11 @@ export function TabelaColunas() {
       <div className="titulo-com-acao">
         <h1>Colunas</h1>
         {edicao.modo === "fechado" && (
-          <button type="button" className="botao" onClick={() => setEdicao({ modo: "nova" })}>
+          <button
+            type="button"
+            className="botao"
+            onClick={() => setEdicao({ modo: "nova" })}
+          >
             Nova coluna
           </button>
         )}

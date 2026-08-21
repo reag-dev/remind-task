@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { digitador } from "../test/util.tsx";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ function montar() {
 }
 
 async function preencher() {
-  const usuario = userEvent.setup();
+  const usuario = digitador();
   await usuario.type(screen.getByLabelText("E-mail"), "novo@remind.local");
   await usuario.type(screen.getByLabelText("Nome"), "Novo");
   await usuario.type(screen.getByLabelText("Senha"), "senha-de-teste-sem-valor");
@@ -85,7 +85,9 @@ describe("Registro", () => {
 
   it("entra automaticamente depois de criar a conta", async () => {
     servidor.use(
-      http.post(`${API}/auth/register/`, () => HttpResponse.json(USUARIO, { status: 201 })),
+      http.post(`${API}/auth/register/`, () =>
+        HttpResponse.json(USUARIO, { status: 201 }),
+      ),
       http.post(`${API}/auth/login/`, () =>
         HttpResponse.json({ access: "tok", user: USUARIO }),
       ),

@@ -1,7 +1,7 @@
 # Plan: remind-task — Frontend SPA
 
 **Date:** 2026-08-20
-**Status:** Phases 0-3 concluídas em 2026-08-20; Phases 4-8 pendentes
+**Status:** Phases 0-7 concluídas em 2026-08-20; Phase 8 pendente
 (plano revisto em 2026-08-20: TanStack Table adotado, paginação promovida a fase própria)
 **Stack:** React 19 + Vite + TypeScript + TanStack Query + TanStack Table + React Router
 **Plano irmão:** [`remind-task-mvp-2026-08-19.md`](remind-task-mvp-2026-08-19.md) (backend, concluído)
@@ -504,6 +504,57 @@ cd .. && docker compose up -d && curl -fsS http://localhost:3000 && docker compo
 ```
 
 ---
+
+## TanStack Table saiu v9, e isso muda a armadilha 8
+
+O plano assumia a API v8 (`useReactTable`, `getCoreRowModel`, `manualPagination`). O npm
+instalou **v9.1.2**, que reescreveu o modelo: `useTable`, `createCoreRowModel`, e — o que
+importa — **opt-in explícito de features** via `tableFeatures({...})`.
+
+Isso torna a armadilha 8 **estruturalmente impossível** na Phase 4, em vez de apenas
+evitável. `recursosDoGrid = tableFeatures({})` não inclui `rowPaginationFeature` nem
+`rowSortingFeature`: não existe `table.getState().pagination` para ler errado, e nenhuma
+flag a ser revertida por um autocomplete distraído. O v9 chegou a barrar
+`row.getVisibleCells()` em tempo de compilação, porque ele pertence à
+`columnVisibilityFeature` — o core usa `getAllCells()`.
+
+**O que a Phase 5 fez, e por que difere do previsto:** o plano dizia "declare
+`rowPaginationFeature` e `rowSortingFeature` com as opções de servidor". **Não foi feito** —
+`recursosDoGrid` continua `tableFeatures({})`.
+
+O motivo: o estado de paginação e ordenação vive na URL (`useTabelaServidor`). Declarar as
+features criaria uma **segunda** cópia desse estado dentro da tabela, que precisaria ser
+sincronizada com a primeira — e estado duplicado que precisa de sincronia é a origem do bug
+que a armadilha 8 descreve, só que por outro caminho. O grid recebe `ordenacao` e
+`onOrdenar` como props, renderiza a afordância e o `aria-sort` por conta própria, e a
+biblioteca continua sem qualquer noção de página ou ordem.
+
+A verificação do plano continua valendo e está implementada: 50 linhas com `count: 137`
+mostram **3 páginas**, provado em `Paginacao.test.tsx` e em `TabelaRegistros.test.tsx`, com
+sabotagem confirmando que os testes seguram.
+
+## "Não lido" é `sent`, não `pending` (Phase 6)
+
+O plano dizia badge com `?status=pending`. **Está errado.** O job cria alertas `in_app` já
+como `sent`, porque entregar no aplicativo acontece no ato de gravar a linha
+(`alerts.services`, `delivered_immediately`). `pending` fica reservado para canais que
+dependem de confirmação de envio — e só existe `in_app`.
+
+Medido contra a API: `?status=sent` → 2, `?status=pending` → 0. Filtrar por `pending`
+deixaria a caixa de entrada permanentemente vazia, parecendo "não há alertas".
+
+## Estado de mutação não pode morar num componente que a mutação desmonta
+
+Descoberto na Phase 6, por um teste que não achava a mensagem de erro. A atualização
+otimista remove o alerta da lista, o que **desmonta a linha** — e a `useMutation` que vivia
+lá dentro morre junto. Numa falha do servidor, o rollback trazia o item de volta e nenhuma
+mensagem explicava por quê: o usuário concluiria que o clique não pegou.
+
+As mutações subiram para a página. O padrão vale para qualquer lista com remoção otimista.
+
+Relacionado, e também descoberto por teste: o TanStack Query só despacha o estado `error` da
+mutação **depois** que o `onSettled` resolve. Um `await invalidateQueries()` ali dentro faz a
+mensagem de falha esperar a revalidação inteira. Sem `await`.
 
 ## Achados da implementação (Phases 0-1)
 

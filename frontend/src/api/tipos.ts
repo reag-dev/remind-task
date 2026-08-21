@@ -24,7 +24,16 @@ export type Registro = Omit<Schemas["Record"], "data"> & {
   data?: DadosDoRegistro;
 };
 
-export type Tabela = Schemas["Table"];
+/**
+ * `columns` reapontado para o `Coluna` estreitado.
+ *
+ * O detalhe da tabela traz as colunas embutidas, e sem esta substituição elas
+ * chegariam com o `options: unknown` do schema cru — o mesmo tipo teria duas
+ * formas dependendo de por onde veio, e só uma delas serviria aos componentes.
+ */
+export type Tabela = Omit<Schemas["Table"], "columns"> & {
+  readonly columns: Coluna[];
+};
 
 /**
  * `options` estreitado para `string[]`.

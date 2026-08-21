@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { digitador } from "../test/util.tsx";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { describe, expect, it } from "vitest";
@@ -42,7 +42,7 @@ function montar(rota = "/login") {
 }
 
 async function preencherEEnviar() {
-  const usuario = userEvent.setup();
+  const usuario = digitador();
   await usuario.type(screen.getByLabelText("E-mail"), "demo@remind.local");
   await usuario.type(screen.getByLabelText("Senha"), "seja-la-o-que-for");
   await usuario.click(screen.getByRole("button", { name: /entrar/i }));

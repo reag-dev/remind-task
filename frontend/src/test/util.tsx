@@ -1,6 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, type RenderResult } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
+
+/**
+ * `userEvent` sem atraso entre teclas.
+ *
+ * O padrão do `userEvent` insere um `await` por caractere para imitar digitação
+ * humana. Com a suíte inteira rodando em paralelo, digitar um e-mail e uma
+ * senha passava dos 5 segundos de timeout do Vitest — e falhava de forma
+ * intermitente, dependendo da carga da máquina. O pior tipo de teste: verde no
+ * laptop ocioso, vermelho no CI.
+ *
+ * Nada se perde: nenhum teste aqui verifica cadência de digitação.
+ */
+export function digitador() {
+  return userEvent.setup({ delay: null });
+}
 
 /**
  * Cliente de query para teste.

@@ -25,12 +25,7 @@ function precisaDeOpcoes(tipo: TipoDeColuna): boolean {
   return tipo === "select";
 }
 
-export function FormularioColuna({
-  tabelaId,
-  coluna,
-  jaTemVencimento,
-  onSair,
-}: Props) {
+export function FormularioColuna({ tabelaId, coluna, jaTemVencimento, onSair }: Props) {
   const cliente = useQueryClient();
   const editando = coluna !== undefined;
 
@@ -119,8 +114,8 @@ export function FormularioColuna({
       </select>
       {editando && (
         <p id="ajuda-tipo" className="sutil">
-          O tipo não pode mudar: os registros já gravados foram validados contra ele.
-          Para trocar, apague esta coluna e crie outra.
+          O tipo não pode mudar: os registros já gravados foram validados contra ele. Para
+          trocar, apague esta coluna e crie outra.
         </p>
       )}
       <Erros erro={erro} campo="type" />

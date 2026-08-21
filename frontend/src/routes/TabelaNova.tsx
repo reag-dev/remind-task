@@ -66,7 +66,9 @@ export function TabelaNova() {
         />
         <Erros erro={erro} campo="description" />
 
-        <label htmlFor="antecedencia">Destacar como “próximo do vencimento” a partir de</label>
+        <label htmlFor="antecedencia">
+          Destacar como “próximo do vencimento” a partir de
+        </label>
         <input
           id="antecedencia"
           type="number"

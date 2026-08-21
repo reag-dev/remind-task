@@ -1,10 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { API, servidor } from "../test/servidor.ts";
-import { renderizar } from "../test/util.tsx";
+import { digitador, renderizar } from "../test/util.tsx";
 import { Tabelas } from "./Tabelas.tsx";
 
 function tabela(parcial: Partial<Record<string, unknown>> = {}) {
@@ -72,7 +71,7 @@ describe("Tabelas", () => {
     it("nomeia a tabela e avisa da cascata antes de confirmar", async () => {
       servidor.use(listaCom(tabela()));
       renderizar(<Tabelas />);
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
 
@@ -94,7 +93,7 @@ describe("Tabelas", () => {
         }),
       );
       renderizar(<Tabelas />);
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
       await usuario.click(screen.getByRole("button", { name: "Cancelar" }));
@@ -122,7 +121,7 @@ describe("Tabelas", () => {
         }),
       );
       renderizar(<Tabelas />);
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
       await usuario.click(
@@ -147,7 +146,7 @@ describe("Tabelas", () => {
         ),
       );
       renderizar(<Tabelas />);
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Renomear" }));
       await usuario.clear(screen.getByLabelText("Nome da tabela"));
@@ -176,11 +175,14 @@ describe("Tabelas", () => {
         }),
       );
       renderizar(<Tabelas />);
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Renomear" }));
       await usuario.clear(screen.getByLabelText("Nome da tabela"));
-      await usuario.type(screen.getByLabelText("Nome da tabela", { exact: true }), "  Licenças  ");
+      await usuario.type(
+        screen.getByLabelText("Nome da tabela", { exact: true }),
+        "  Licenças  ",
+      );
       await usuario.click(screen.getByRole("button", { name: "Salvar" }));
 
       expect(await screen.findByRole("link", { name: "Licenças" })).toBeInTheDocument();

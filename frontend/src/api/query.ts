@@ -13,6 +13,28 @@ export const chaves = {
   tabelas: ["tabelas"] as const,
   tabela: (id: string) => ["tabelas", id] as const,
   colunas: (tabelaId: string) => ["tabelas", tabelaId, "colunas"] as const,
+  registros: (tabelaId: string) => ["tabelas", tabelaId, "registros"] as const,
+  /**
+   * Registros com filtros/ordenação/página — a chave carrega a consulta.
+   *
+   * É o que faz o TanStack Query tratar cada combinação como um recurso
+   * próprio, em vez de sobrescrever o cache a cada troca de filtro. Invalidar
+   * `registros(id)` alcança todas elas por prefixo.
+   */
+  registrosCom: (tabelaId: string, consulta: Record<string, unknown>) =>
+    ["tabelas", tabelaId, "registros", consulta] as const,
+  regras: (tabelaId: string) => ["tabelas", tabelaId, "regras"] as const,
+
+  /**
+   * Alertas ficam FORA da árvore `["tabelas", ...]`.
+   *
+   * A caixa de entrada é do usuário, não de uma tabela — ela mistura alertas de
+   * todas elas. Pendurá-la sob `["tabelas", id]` faria uma edição de tabela
+   * qualquer invalidar a inbox inteira, e o contador do cabeçalho piscaria a
+   * cada renomeação.
+   */
+  alertas: ["alertas"] as const,
+  alertasCom: (consulta: Record<string, unknown>) => ["alertas", consulta] as const,
 };
 
 /**

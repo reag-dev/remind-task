@@ -1,11 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Coluna } from "../api/tipos.ts";
 import { API, servidor } from "../test/servidor.ts";
-import { renderizar } from "../test/util.tsx";
+import { digitador, renderizar } from "../test/util.tsx";
 import { ListaColunas } from "./ListaColunas.tsx";
 
 const ID = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -27,9 +26,7 @@ function coluna(parcial: Partial<Coluna> = {}): Coluna {
 }
 
 function montar(colunas: Coluna[]) {
-  return renderizar(
-    <ListaColunas tabelaId={ID} colunas={colunas} onEditar={vi.fn()} />,
-  );
+  return renderizar(<ListaColunas tabelaId={ID} colunas={colunas} onEditar={vi.fn()} />);
 }
 
 describe("ListaColunas", () => {
@@ -54,7 +51,7 @@ describe("ListaColunas", () => {
       ),
     );
     montar([coluna(), coluna({ id: "c2", key: "valor", name: "Valor" })]);
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.click(screen.getByRole("button", { name: "Mover Valor para cima" }));
 
@@ -73,7 +70,7 @@ describe("ListaColunas", () => {
       ),
     );
     montar([coluna()]);
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.click(screen.getByRole("button", { name: "Excluir" }));
     await usuario.click(
@@ -92,7 +89,7 @@ describe("ListaColunas", () => {
       ),
     );
     montar([coluna()]);
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.click(screen.getByRole("button", { name: "Excluir" }));
     const dialogo = screen.getByRole("dialog");
@@ -113,14 +110,16 @@ describe("ListaColunas", () => {
       }),
     );
     montar([coluna(), coluna({ id: "c2", key: "valor", name: "Valor" })]);
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await usuario.click(screen.getByRole("button", { name: "Mover Valor para cima" }));
 
     // Dois cliques rápidos enviariam duas permutações calculadas sobre a MESMA
     // lista antiga — a segunda desfaria a primeira.
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Mover Cliente para baixo" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Mover Cliente para baixo" }),
+      ).toBeDisabled();
     });
   });
 });

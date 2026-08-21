@@ -8,8 +8,10 @@ import { Layout } from "./components/Layout.tsx";
 import { Login } from "./routes/Login.tsx";
 import { Registro } from "./routes/Registro.tsx";
 import { RotaProtegida } from "./routes/RotaProtegida.tsx";
+import { Alertas } from "./routes/Alertas.tsx";
 import { TabelaColunas } from "./routes/TabelaColunas.tsx";
-import { TabelaDetalhe } from "./routes/TabelaDetalhe.tsx";
+import { TabelaRegras } from "./routes/TabelaRegras.tsx";
+import { TabelaRegistros } from "./routes/TabelaRegistros.tsx";
 import { TabelaNova } from "./routes/TabelaNova.tsx";
 import { Tabelas } from "./routes/Tabelas.tsx";
 
@@ -30,8 +32,10 @@ export function App() {
               <Route element={<Layout />}>
                 <Route path="/" element={<Tabelas />} />
                 <Route path="/tabelas/nova" element={<TabelaNova />} />
-                <Route path="/tabelas/:id" element={<TabelaDetalhe />} />
+                <Route path="/tabelas/:id" element={<TabelaRegistros />} />
                 <Route path="/tabelas/:id/colunas" element={<TabelaColunas />} />
+                <Route path="/tabelas/:id/alertas" element={<TabelaRegras />} />
+                <Route path="/alertas" element={<Alertas />} />
               </Route>
             </Route>
           </Routes>

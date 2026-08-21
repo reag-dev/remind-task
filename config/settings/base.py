@@ -197,7 +197,10 @@ REST_FRAMEWORK = {
         "django_filters.rest_framework.DjangoFilterBackend",
         "rest_framework.filters.OrderingFilter",
     ),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    # Subclasse própria: expõe `?page_size=` com teto de 200. O padrão do DRF
+    # ignora o parâmetro em silêncio, e um seletor de "linhas por página" no
+    # cliente pareceria funcionar sem funcionar. Ver core/pagination.py.
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.PaginacaoPadrao",
     "PAGE_SIZE": 50,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
 }
@@ -224,6 +227,16 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
 CORS_ALLOW_CREDENTIALS = True
+
+# RF13 — sem isto o browser ESCONDE o `Content-Disposition` do JavaScript numa
+# resposta cross-origin, e o CSV baixa com o nome genérico da URL em vez de
+# `contratos-2026-08-20.csv`. O header não é secreto: ele já vai na resposta, e
+# a política só decide se o script da página pode lê-lo.
+#
+# A lista é explícita e curta de propósito. Expor cabeçalhos em massa (ou `*`)
+# entregaria a scripts de outra origem coisas como `Vary` e headers de
+# infraestrutura que não são da conta deles.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # ---------------------------------------------------------------- logging
 

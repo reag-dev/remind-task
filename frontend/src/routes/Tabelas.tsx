@@ -74,14 +74,17 @@ function LinhaDeTabela({ tabela, onExcluir }: { tabela: Tabela; onExcluir: () =>
             </Link>
             {tabela.description && <p className="sutil">{tabela.description}</p>}
             <p className="sutil meta">
-              {tabela.columns.length}{" "}
-              {tabela.columns.length === 1 ? "coluna" : "colunas"} · alerta{" "}
-              {tabela.alert_lead_days ?? 0}{" "}
+              {tabela.columns.length} {tabela.columns.length === 1 ? "coluna" : "colunas"}{" "}
+              · alerta {tabela.alert_lead_days ?? 0}{" "}
               {(tabela.alert_lead_days ?? 0) === 1 ? "dia" : "dias"} antes
             </p>
           </div>
           <div className="acoes">
-            <button type="button" className="secundario" onClick={() => setRenomeando(true)}>
+            <button
+              type="button"
+              className="secundario"
+              onClick={() => setRenomeando(true)}
+            >
               Renomear
             </button>
             <button type="button" className="destrutivo" onClick={onExcluir}>

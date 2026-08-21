@@ -1,5 +1,6 @@
+import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { clienteDeTeste, digitador } from "../test/util.tsx";
 import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -18,22 +19,33 @@ const USUARIO = {
 };
 
 function montar() {
+  // O `QueryClientProvider` e o handler de `/alerts/` entraram na Phase 6: o
+  // Layout passou a montar o BadgeAlertas, que consulta a inbox. Sem os dois,
+  // todo teste que renderiza a moldura quebra — foi assim que este quebrou.
+  servidor.use(
+    http.get(`${API}/alerts/`, () =>
+      HttpResponse.json({ count: 0, next: null, previous: null, results: [] }),
+    ),
+  );
+
   return render(
-    <MemoryRouter initialEntries={["/"]}>
-      <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<p>tela de login</p>} />
-          {/* Mesmo aninhamento do App: quem redireciona ao perder a sessão é a
-              RotaProtegida, não o Layout. Montar o Layout solto testaria uma
-              árvore que não existe em produção. */}
-          <Route element={<RotaProtegida />}>
-            <Route element={<Layout />}>
-              <Route path="/" element={<p>miolo</p>} />
+    <QueryClientProvider client={clienteDeTeste()}>
+      <MemoryRouter initialEntries={["/"]}>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<p>tela de login</p>} />
+            {/* Mesmo aninhamento do App: quem redireciona ao perder a sessão é
+                a RotaProtegida, não o Layout. Montar o Layout solto testaria
+                uma árvore que não existe em produção. */}
+            <Route element={<RotaProtegida />}>
+              <Route element={<Layout />}>
+                <Route path="/" element={<p>miolo</p>} />
+              </Route>
             </Route>
-          </Route>
-        </Routes>
-      </AuthProvider>
-    </MemoryRouter>,
+          </Routes>
+        </AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -60,7 +72,7 @@ describe("Layout", () => {
       }),
     );
     montar();
-    const usuario = userEvent.setup();
+    const usuario = digitador();
 
     await screen.findByText("demo@remind.local");
     await usuario.click(screen.getByRole("button", { name: "Sair" }));

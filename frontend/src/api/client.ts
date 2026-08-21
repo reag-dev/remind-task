@@ -17,7 +17,15 @@ export const API_URL = import.meta.env.VITE_API_URL;
  */
 export type CorpoDeErro = {
   detail?: string;
-  [campo: string]: string | string[] | undefined;
+  /**
+   * Um campo pode carregar um OBJETO, não só mensagens.
+   *
+   * O `validate_data` de `RecordSerializer` devolve os erros das colunas
+   * aninhados sob `data` — `{"data": {"cpf": ["Formato inválido."]}}` — porque
+   * o JSONB tem estrutura própria. Um tipo que só admitisse `string | string[]`
+   * obrigaria a um cast em todo lugar que lê esse caso.
+   */
+  [campo: string]: string | string[] | Record<string, string | string[]> | undefined;
 };
 
 export class ApiError extends Error {
@@ -45,7 +53,12 @@ export class ApiError extends Error {
   campo(nome: string): string[] {
     const valor = this.corpo[nome];
     if (valor === undefined) return [];
-    return Array.isArray(valor) ? valor : [valor];
+    if (Array.isArray(valor)) return valor;
+    // Erro aninhado (ver `CorpoDeErro`): quem quer as mensagens por sub-chave
+    // lê `corpo[nome]` direto. Aqui devolvemos vazio em vez de "[object
+    // Object]" na tela.
+    if (typeof valor === "object") return [];
+    return [valor];
   }
 }
 
@@ -120,6 +133,29 @@ async function enviar(caminho: string, opcoes: Opcoes): Promise<Response> {
     // é enviado.
     credentials: "include",
   });
+}
+
+/**
+ * A resposta crua, com autenticação e uma renovação em caso de 401.
+ *
+ * Existe para o download de CSV, que precisa do `Response` — do blob e do
+ * `Content-Disposition` — e não de JSON desserializado. Reaproveita o mesmo
+ * interceptor de `request` **de propósito**: sem isto, exportar depois de 15
+ * minutos parado daria erro em vez de renovar o token, e cada chamador teria
+ * sua própria cópia da lógica de refresh para sair de sincronia.
+ */
+export async function requestRaw(url: URL): Promise<Response> {
+  const buscar = () => {
+    const token = lerToken();
+    return fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "include",
+    });
+  };
+
+  const resposta = await buscar();
+  if (resposta.status === 401 && (await aoReceber401())) return buscar();
+  return resposta;
 }
 
 export async function request<T>(caminho: string, opcoes: Opcoes = {}): Promise<T> {

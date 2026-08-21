@@ -76,3 +76,57 @@ def test_a_garbage_token_does_not_get_a_file(api_client, mine):
     resposta = api_client.get(reverse("records:record-export", args=[mine.table.id]))
 
     assert resposta.status_code == 401
+
+
+def test_the_filename_header_is_readable_by_the_browser(auth_client, mine, settings):
+    """
+    RF13 — `Content-Disposition` exposto ao JavaScript da SPA.
+
+    O download não pode ser um `<a href>`: a rota exige `Authorization: Bearer`,
+    e âncora não carrega header. O cliente busca o arquivo com `fetch` e monta o
+    download a partir do blob — e para dar ao arquivo o nome que o servidor
+    escolheu, precisa LER o `Content-Disposition`.
+
+    Numa resposta cross-origin o browser esconde todo header que não esteja em
+    `Access-Control-Expose-Headers`. Sem esta configuração o CSV baixaria com o
+    nome da URL (`export`, sem extensão), e o sintoma só apareceria no browser —
+    nunca em `curl`, nunca no teste de API. Daí o tripwire aqui.
+    """
+    assert "Content-Disposition" in settings.CORS_EXPOSE_HEADERS
+
+    resposta = auth_client.get(
+        reverse("records:record-export", args=[mine.table.id]),
+        HTTP_ORIGIN="http://localhost:3000",
+    )
+    b"".join(resposta.streaming_content)
+
+    assert resposta["Content-Disposition"].startswith("attachment; filename=")
+    # O header que o browser consulta para decidir o que o script pode ler.
+    expostos = resposta.get("access-control-expose-headers", "")
+    assert "Content-Disposition" in expostos
+
+
+def test_the_export_ignores_pagination(auth_client, mine):
+    """
+    A exportação transmite a queryset filtrada INTEIRA, sem paginar.
+
+    O cliente omite `page` e `page_size` ao exportar. Este teste garante que
+    mandá-los por engano não corta o arquivo: quem exporta quer tudo o que o
+    filtro seleciona, e um CSV silenciosamente truncado em 50 linhas seria pior
+    que um erro.
+    """
+    from records.models import Record
+
+    Record.objects.bulk_create(
+        [
+            Record(table=mine.table, user=mine.table.user, data=dict(mine.record.data))
+            for _ in range(10)
+        ]
+    )
+
+    _, sem_paginacao = baixar(auth_client, mine.table.id)
+    _, com_paginacao = baixar(auth_client, mine.table.id, page=1, page_size=2)
+
+    assert sem_paginacao == com_paginacao
+    # 11 registros + cabeçalho.
+    assert len([linha for linha in sem_paginacao.splitlines() if linha.strip()]) == 12

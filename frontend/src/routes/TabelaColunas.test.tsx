@@ -1,11 +1,10 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Coluna } from "../api/tipos.ts";
 import { API, servidor } from "../test/servidor.ts";
-import { renderizar } from "../test/util.tsx";
+import { digitador, renderizar } from "../test/util.tsx";
 import { TabelaColunas } from "./TabelaColunas.tsx";
 
 const ID = "aaaaaaaa-0000-0000-0000-000000000001";
@@ -67,7 +66,10 @@ describe("TabelaColunas", () => {
 
   it("não repete o aviso quando já existe uma coluna de vencimento", async () => {
     servidor.use(
-      ...comColunas(coluna(), coluna({ id: "c2", key: "vence", name: "Vence", type: "due_date" })),
+      ...comColunas(
+        coluna(),
+        coluna({ id: "c2", key: "vence", name: "Vence", type: "due_date" }),
+      ),
     );
     montar();
 
@@ -94,11 +96,9 @@ describe("TabelaColunas", () => {
 
   describe("RF06 — uma coluna de vencimento por tabela", () => {
     it("desabilita o tipo vencimento quando já existe uma", async () => {
-      servidor.use(
-        ...comColunas(coluna({ id: "c2", name: "Vence", type: "due_date" })),
-      );
+      servidor.use(...comColunas(coluna({ id: "c2", name: "Vence", type: "due_date" })));
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Nova coluna" }));
 
@@ -112,7 +112,7 @@ describe("TabelaColunas", () => {
     it("oferece o tipo vencimento quando ainda não há nenhuma", async () => {
       servidor.use(...comColunas(coluna()));
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Nova coluna" }));
 
@@ -124,7 +124,7 @@ describe("TabelaColunas", () => {
     it("trava o tipo e explica por quê", async () => {
       servidor.use(...comColunas(coluna()));
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Editar" }));
 
@@ -137,10 +137,13 @@ describe("TabelaColunas", () => {
 
     it("remonta o formulário ao trocar de coluna", async () => {
       servidor.use(
-        ...comColunas(coluna(), coluna({ id: "c2", key: "valor", name: "Valor", type: "number" })),
+        ...comColunas(
+          coluna(),
+          coluna({ id: "c2", key: "valor", name: "Valor", type: "number" }),
+        ),
       );
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       const editar = await screen.findAllByRole("button", { name: "Editar" });
       await usuario.click(editar[0]!);
@@ -157,7 +160,7 @@ describe("TabelaColunas", () => {
     it("só pede opções para o tipo lista", async () => {
       servidor.use(...comColunas(coluna()));
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Nova coluna" }));
       expect(screen.queryByLabelText("Opções")).not.toBeInTheDocument();
@@ -176,7 +179,7 @@ describe("TabelaColunas", () => {
         }),
       );
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Nova coluna" }));
       await usuario.type(screen.getByLabelText("Rótulo"), "Status");
@@ -209,7 +212,7 @@ describe("TabelaColunas", () => {
         }),
       );
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(
         await screen.findByRole("button", { name: "Mover Valor para cima" }),
@@ -233,7 +236,9 @@ describe("TabelaColunas", () => {
       expect(
         await screen.findByRole("button", { name: "Mover Cliente para cima" }),
       ).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Mover Valor para baixo" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "Mover Valor para baixo" }),
+      ).toBeDisabled();
     });
   });
 
@@ -241,7 +246,7 @@ describe("TabelaColunas", () => {
     it("avisa que o valor some de todos os registros", async () => {
       servidor.use(...comColunas(coluna()));
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
 
@@ -251,16 +256,20 @@ describe("TabelaColunas", () => {
 
     it("avisa que apagar a coluna de vencimento desliga os alertas", async () => {
       servidor.use(
-        ...comColunas(coluna({ id: "c2", key: "vence", name: "Vence", type: "due_date" })),
+        ...comColunas(
+          coluna({ id: "c2", key: "vence", name: "Vence", type: "due_date" }),
+        ),
       );
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
 
       // `purge_column_key(was_due_date=True)` zera o due_date promovido. Quem
       // apaga a coluna não imagina que está desligando os alertas da tabela.
-      expect(screen.getByRole("dialog")).toHaveTextContent(/nenhum alerta novo será gerado/i);
+      expect(screen.getByRole("dialog")).toHaveTextContent(
+        /nenhum alerta novo será gerado/i,
+      );
     });
 
     it("não chama a API ao cancelar", async () => {
@@ -273,7 +282,7 @@ describe("TabelaColunas", () => {
         }),
       );
       montar();
-      const usuario = userEvent.setup();
+      const usuario = digitador();
 
       await usuario.click(await screen.findByRole("button", { name: "Excluir" }));
       await usuario.click(
@@ -287,7 +296,9 @@ describe("TabelaColunas", () => {
   it("trata tabela alheia como não encontrada, sem falar em permissão", async () => {
     servidor.use(
       http.get(`${API}/tables/${ID}/`, () => HttpResponse.json({}, { status: 404 })),
-      http.get(`${API}/tables/${ID}/columns/`, () => HttpResponse.json({}, { status: 404 })),
+      http.get(`${API}/tables/${ID}/columns/`, () =>
+        HttpResponse.json({}, { status: 404 }),
+      ),
     );
     montar();
 

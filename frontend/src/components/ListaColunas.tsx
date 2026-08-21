@@ -176,8 +176,8 @@ function ConfirmarExclusaoDeColuna({
         // dispararia por um vencimento que não tem mais origem — e quem apaga
         // a coluna não imagina que está desligando os alertas da tabela.
         <p className="erro">
-          Esta é a coluna de vencimento. Os registros perdem a data, a tabela deixa de
-          ter indicadores de vencimento e nenhum alerta novo será gerado.
+          Esta é a coluna de vencimento. Os registros perdem a data, a tabela deixa de ter
+          indicadores de vencimento e nenhum alerta novo será gerado.
         </p>
       )}
       {excluir.isError && (
