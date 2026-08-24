@@ -74,10 +74,28 @@ def _csrf_origin(host: str) -> str | None:
     return f"https://{host}"
 
 
+# O host do healthcheck sai da derivação, e isto é correção de um vazamento.
+#
+# Ele entrou em ALLOWED_HOSTS para o healthcheck da plataforma não levar 400
+# (ver base.py). Só que CSRF_TRUSTED_ORIGINS é derivado dali quando não vem
+# declarado — e o efeito foi passar a confiar em `https://healthcheck.railway.app`
+# para fins de CSRF. Um domínio que não é nosso, num lugar onde a lista existe
+# justamente para dizer de quem aceitamos POST.
+#
+# Sem consequência prática hoje (o healthcheck só faz GET, e em produção a lista
+# vem declarada), mas é exatamente o tipo de acréscimo silencioso que a
+# igualdade estrita de `tests/security/test_transport.py` existe para pegar —
+# e pegou.
+_hosts_para_csrf = [
+    host
+    for host in ALLOWED_HOSTS  # noqa: F405
+    if host != RAILWAY_HEALTHCHECK_HOST  # noqa: F405
+]
+
 # Derivar de ALLOWED_HOSTS cobre o caso comum (mesmo domínio, atrás de proxy
 # HTTPS). Quem tem front em outro domínio informa a lista explicitamente.
 CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv()) or [
-    origin for origin in map(_csrf_origin, ALLOWED_HOSTS) if origin  # noqa: F405
+    origin for origin in map(_csrf_origin, _hosts_para_csrf) if origin
 ]
 
 # ------------------------------------------------------- cookie de refresh
