@@ -71,8 +71,24 @@ export default defineRailway(() => {
     // ⚠️ Em produção o EMAIL_BACKEND já defaulta para SMTP (prod.py). Sem a
     // senha, todo envio falha e o alerta acaba em FAILED — o que é melhor que
     // o console, onde o envio "funciona" e ninguém recebe nada.
+    //
+    // A implantação usa SMTP do Gmail, e não o Resend que a Phase 0 escolheu.
+    // O motivo é concreto: provedor transacional exige domínio próprio
+    // verificado com SPF/DKIM, e a mesma Phase 0 decidiu ficar só em
+    // `*.up.railway.app`. Sem domínio, o Resend só entrega no endereço do dono
+    // da conta — inútil para usuário real. Uma conta de e-mail comum é um SMTP
+    // legítimo, entrega para qualquer um e não pede domínio.
+    //
+    // O código não mudou por causa disso: ele fala SMTP puro, e a amarração a
+    // fornecedor é só a credencial. Ver `.env.prod.example` para o caminho de
+    // volta a um provedor transacional.
+    EMAIL_HOST: preserve(),
+    EMAIL_PORT: preserve(),
+    EMAIL_HOST_USER: preserve(),
     EMAIL_HOST_PASSWORD: preserve(),
-    // Precisa ser um endereço no domínio verificado (SPF/DKIM) no Resend.
+    // Precisa ser um endereço que o provedor aceite enviar em seu nome.
+    // Qualquer outro é recusado no ENVIO, não na configuração — o serviço sobe
+    // normalmente e só os e-mails falham.
     DEFAULT_FROM_EMAIL: preserve(),
   };
 

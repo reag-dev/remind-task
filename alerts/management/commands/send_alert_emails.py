@@ -5,9 +5,9 @@ Existe pelo mesmo motivo que `scan_alerts`: o cron da plataforma é o executor,
 e não há serviço `beat` de pé só para disparar uma task.
 
 Comando SEPARADO da varredura, e não um passo dela. Gerar alertas e entregá-los
-falham por motivos diferentes — um dado estranho numa tabela versus um provedor
-de e-mail fora do ar — e juntá-los faria uma indisponibilidade do Resend parar
-também a geração dos alertas in-app, que não dependem de rede nenhuma.
+falham por motivos diferentes — um dado estranho numa tabela versus um servidor
+SMTP fora do ar — e juntá-los faria uma indisponibilidade do provedor de e-mail
+parar também a geração dos alertas in-app, que não dependem de rede nenhuma.
 
 Para rodar os dois no mesmo cron sem que caiam juntos, separe por `;` e não por
 `&&`:

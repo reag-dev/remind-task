@@ -211,9 +211,20 @@ O que sobra para o painel:
 | `cron-alertas` | Start Command com os **dois** comandos, separados por `;` | `scan_alerts` gera os alertas e `send_alert_emails` os entrega. Com `&&`, uma varredura que falhasse pularia a entrega dos pendentes que ja estavam na fila |
 | `web` e `frontend` | Variavel `PORT` declarada (8000 e 80) | O Railway tira a porta de destino do dominio do `EXPOSE` do Dockerfile mas injeta `PORT=8080` no container. Sem fixar, o processo sobe numa porta e o edge disca outra — e o dominio devolve 502 com a aplicacao de pe e o log limpo |
 
-Envio de e-mail (Phase 5): o dominio precisa estar **verificado com SPF/DKIM**
-no painel do Resend antes de o envio funcionar. Nada na suite de testes revela
-isso — eles usam o backend `locmem`, que aceita qualquer endereco.
+Envio de e-mail (Phase 5): a aplicacao fala **SMTP puro**, sem SDK de
+fornecedor — trocar de provedor e trocar `EMAIL_HOST`, `EMAIL_PORT`,
+`EMAIL_HOST_USER` e `EMAIL_HOST_PASSWORD`. A implantacao atual usa **SMTP do
+Gmail** com senha de app.
+
+A Phase 0 tinha escolhido Resend, e a escolha caiu na implantacao: provedor
+transacional exige **dominio proprio** verificado com SPF/DKIM, e a mesma
+Phase 0 decidiu ficar so em `*.up.railway.app`. Sem dominio, o Resend so
+entrega no endereco do dono da conta. Detalhes e o caminho de volta em
+[`.env.prod.example`](.env.prod.example).
+
+⚠️ Nada na suite de testes revela um provedor mal configurado — eles usam o
+backend `locmem`, que aceita qualquer endereco. O que prova o transporte e um
+envio real.
 
 ### 3. Variaveis
 

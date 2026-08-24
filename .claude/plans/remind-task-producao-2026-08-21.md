@@ -6,7 +6,26 @@
 | Decisão | Escolha | Consequência |
 |---|---|---|
 | Topologia de domínios | **Só `*.up.railway.app`** (sem domínio próprio) | `SameSite=None; Secure` é obrigatório; CSRF explícito e CORS por origem exata entram na Phase 1 — ver *Gatilho disparado* abaixo |
-| Provedor de e-mail | **Resend** (SMTP via `EMAIL_BACKEND`) | Phase 5 desbloqueada; domínio verificado com SPF/DKIM é pré-requisito de envio |
+| Provedor de e-mail | ~~**Resend**~~ → **SMTP do Gmail** na implantação (2026-08-24) | Ver a nota abaixo: as duas decisões eram incompatíveis |
+
+> **⚠️ As duas decisões acima se contradiziam, e ninguém notou até a Phase 5
+> implantar.** Provedor transacional exige **domínio próprio** verificado com
+> SPF/DKIM; a Decisão 1 abriu mão de domínio próprio. Sem domínio, o Resend só
+> entrega no endereço do dono da conta — o que não serve a usuário nenhum.
+>
+> A saída foi SMTP de uma conta de e-mail comum: é servidor legítimo, entrega
+> para qualquer destinatário e não pede domínio. **Nenhuma linha de código
+> mudou** — a aplicação fala SMTP puro e a amarração a fornecedor é só a
+> credencial, que foi exatamente o critério da Decisão 2.
+>
+> Custo aceito: ~500 e-mails/dia, remetente pessoal em vez do produto, e
+> reputação de envio misturada com a caixa pessoal de quem opera. O caminho de
+> volta a um provedor transacional está em `.env.prod.example` e custa quatro
+> variáveis.
+>
+> **A lição é sobre o formato da Phase 0, não sobre e-mail:** duas decisões
+> foram tomadas na mesma tabela sem que se perguntasse se uma restringia a
+> outra.
 
 **Gatilho de replanejamento disparado pela Decisão 1.** O plano previa isto: com
 dois registrable domains diferentes, o cookie de refresh só sobrevive com
@@ -186,9 +205,9 @@ Apagar a conta precisa invalidar explicitamente.
 
 **Objective:** resolver as bifurcações antes de escrever código.
 
-**Resultado:** `*.up.railway.app` (sem domínio próprio) + **Resend** para
-e-mail. As escolhas e o gatilho que a primeira disparou estão no **Status** no
-topo deste arquivo. A tabela de caminhos abaixo fica como registro do que foi
+**Resultado:** `*.up.railway.app` (sem domínio próprio) + Resend para e-mail —
+**e as duas eram incompatíveis**, o que só apareceu ao implantar a Phase 5. A
+correção e a lição estão no **Status** no topo deste arquivo. A tabela de caminhos abaixo fica como registro do que foi
 pesado — a linha "recomendado" **não** foi a escolhida, e isso é deliberado:
 o custo de um domínio não se justificou nesta fase.
 
@@ -454,15 +473,18 @@ docker compose exec -T web pytest tests/security/ -q
 > `&&` — com `&&`, uma varredura que falhasse pularia a entrega. Registrado em
 > `.railway/railway.ts`.
 >
-> ⚠️ **Falta fora do código:** verificar o domínio (SPF/DKIM) no painel do
-> Resend e preencher `EMAIL_HOST_PASSWORD` e `DEFAULT_FROM_EMAIL` nos serviços.
-> Os testes usam `locmem`, que aceita qualquer endereço — **nada na suíte
-> revela um domínio não verificado**.
-
-> **Provedor decidido (Phase 0): Resend**, falando SMTP por `EMAIL_BACKEND`.
-> Verificar o domínio (SPF/DKIM) no painel do Resend **antes** de testar envio
-> real — sem isso a entrega falha ou cai em spam, e o `locmem` dos testes não
-> revela isso. A amarração a fornecedor fica só na credencial.
+> **Provedor: SMTP do Gmail**, não o Resend que a Phase 0 escolheu — as duas
+> decisões da Phase 0 eram incompatíveis, e isso só apareceu aqui. Ver a nota
+> no **Status**, no topo. Nenhuma linha de código mudou por causa disso.
+>
+> **Configurado e verificado em 2026-08-24:** `EMAIL_HOST`, `EMAIL_PORT`,
+> `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD` (senha de app) e
+> `DEFAULT_FROM_EMAIL` em `worker` e `cron-alertas`. O transporte foi provado
+> com um envio real, e não pela suíte: os testes usam `locmem`, que aceita
+> qualquer endereço — **nada neles revela um provedor mal configurado**.
+>
+> ⚠️ **Falta fora do código:** o Start Command do `cron-alertas` precisa rodar
+> os dois comandos (`scan_alerts; send_alert_emails`); hoje roda só a varredura.
 
 **Objective:** fechar a costura que `alerts/services.py` já deixou aberta.
 

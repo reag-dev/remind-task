@@ -374,24 +374,31 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 # ---------------------------------------------------------------- e-mail
 
-# Provedor decidido na Phase 0: Resend, falando SMTP. A amarração a fornecedor
-# fica só na credencial — trocar de provedor é trocar host, usuário e senha.
+# SMTP puro, sem SDK de fornecedor. A amarração a provedor é só a credencial:
+# trocar é trocar host, porta, usuário e senha, sem tocar em código. Foi por
+# isso que a implantação pôde sair do Resend (Phase 0) para o SMTP de uma conta
+# comum sem alterar uma linha — ver `.env.prod.example`.
 #
-# O default é o backend de CONSOLE, e isso é deliberado: sem credencial, o
+# Nenhum host ou usuário tem default de fornecedor aqui, de propósito. Um
+# `smtp.resend.com` embutido dá a impressão de que existe um provedor
+# configurado quando não existe: quem esquecesse `EMAIL_HOST` num serviço veria
+# conexões a um servidor com que nunca criou conta, e a mensagem de erro falaria
+# de um produto que não está em uso. Vazio é honesto — e em desenvolvimento nem
+# chega a ser lido, porque o backend default nem abre conexão.
+#
+# O default do BACKEND é o de CONSOLE, e isso é deliberado: sem credencial, o
 # e-mail aparece no terminal em vez de estourar. Em desenvolvimento é o
-# comportamento útil, e num deploy mal configurado é infinitamente melhor que a
-# alternativa — um SMTP que tenta conectar, trava e derruba o worker.
+# comportamento útil, e num deploy mal configurado é melhor que a alternativa —
+# um SMTP que tenta conectar, trava e prende o worker. `prod.py` inverte.
 #
-# ⚠️ Verificar o domínio (SPF/DKIM) no painel do Resend ANTES de confiar no
-# envio real. Sem isso a entrega falha ou cai em spam, e nada nos testes revela
-# isso: eles usam o backend `locmem`, que aceita qualquer coisa.
+# ⚠️ Nada nos testes revela um provedor mal configurado: eles usam o backend
+# `locmem`, que aceita qualquer coisa. Só um envio real prova o transporte.
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
 )
-EMAIL_HOST = config("EMAIL_HOST", default="smtp.resend.com")
+EMAIL_HOST = config("EMAIL_HOST", default="")
 EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
-# No Resend o usuário é a string literal "resend" e a senha é a API key.
-EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="resend")
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
 EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
 
