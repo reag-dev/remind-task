@@ -57,14 +57,6 @@ export default defineRailway(() => {
   const comuns = {
     DJANGO_SETTINGS_MODULE: "config.settings.prod",
     DJANGO_SECRET_KEY: preserve(),
-    // Nos TRÊS serviços, e não só no `web`.
-    //
-    // Só o serviço com domínio público recebe RAILWAY_PUBLIC_DOMAIN, e é ele
-    // que preenche ALLOWED_HOSTS sozinho (base.py). `worker` e `cron-alertas`
-    // não têm domínio, então a lista fica vazia e `prod.py` derruba o boot —
-    // num processo que nem serve HTTP. Foi assim que o worker quebrou no
-    // primeiro deploy real, em 2026-08-24.
-    DJANGO_ALLOWED_HOSTS: preserve(),
     DATABASE_URL: db.env.DATABASE_URL,
     REDIS_URL: cache.env.REDIS_URL,
     // Banco 1: o 0 é do Celery. Ver a nota de CACHES em config/settings/base.py
@@ -82,6 +74,15 @@ export default defineRailway(() => {
     healthcheckTimeout: 60,
     env: {
       ...comuns,
+      // Estas três são do `web` e só dele: são a configuração da superfície
+      // HTTP, e é o carregamento do WSGI que as valida (config/validacao.py).
+      //
+      // Elas chegaram a ficar no bloco comum, depois que o worker quebrou por
+      // falta delas no primeiro deploy real (2026-08-24). Aquilo era remendo:
+      // exigir uma lista de origens CORS de um processo que não atende
+      // requisição só adiava a próxima guarda a derrubá-lo. A causa foi
+      // corrigida onde estava.
+      DJANGO_ALLOWED_HOSTS: preserve(),
       // Origem EXATA do frontend, com esquema. Obrigatória: `prod.py` levanta
       // ImproperlyConfigured se vier vazia, porque com SameSite=None e o front
       // em outro registrable domain, CORS vazio significa SPA em branco.

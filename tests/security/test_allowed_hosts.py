@@ -46,7 +46,11 @@ def _carregar(**extra: str) -> subprocess.CompletedProcess:
         [
             sys.executable,
             "-c",
-            "import json, django; django.setup();"
+            # `config.wsgi`, e não só `django.setup()`: é ele que dispara as
+            # guardas de superfície HTTP (ver config/validacao.py). Importar só
+            # as settings mediria um caminho que não valida mais nada — e é
+            # exatamente o caminho do worker do Celery.
+            "import json, config.wsgi;"
             "from django.conf import settings as s;"
             "print(json.dumps({'ALLOWED_HOSTS': list(s.ALLOWED_HOSTS)}))",
         ],
@@ -109,13 +113,53 @@ def test_dominio_ja_declarado_nao_entra_duas_vezes():
     assert _hosts(resultado) == ["web-abc.up.railway.app"]
 
 
-def test_a_mensagem_de_erro_explica_o_caso_do_worker():
+def test_a_mensagem_aponta_de_onde_o_valor_deveria_vir():
     """
-    O que custou o deploy não foi a guarda — foi não saber por que ela disparou
-    num processo que nem atende HTTP. A mensagem tem que levar até a causa
-    sozinha, porque quem a lê está olhando um traceback de 200 linhas do Celery.
+    Quem lê esta mensagem está olhando um traceback longo e precisa saber o que
+    fazer, não só o que faltou.
+
+    A versão anterior deste teste exigia que a mensagem explicasse o caso do
+    worker do Celery. Deixou de fazer sentido quando as guardas saíram do corpo
+    das settings: o worker não carrega mais o WSGI, então nunca vê esta
+    mensagem. O que sobra é apontar o mecanismo da plataforma.
     """
     resultado = _carregar()
 
-    for pista in ("worker", "RAILWAY_PUBLIC_DOMAIN", "domínio"):
+    for pista in ("RAILWAY_PUBLIC_DOMAIN", "domínio"):
         assert pista in resultado.stderr, f"a mensagem não menciona {pista!r}"
+
+
+# ------------------------------------------------ o caminho sem HTTP
+
+
+def test_processo_sem_http_nao_exige_nada_disso():
+    """
+    A regressão que custou dois deploys.
+
+    O Celery carrega as settings, mas não importa `config.wsgi` — ele não atende
+    requisição nenhuma. Enquanto as guardas moravam no corpo de `prod.py`, o
+    worker se recusava a subir por falta de `ALLOWED_HOSTS`, e depois por falta
+    de `CORS_ALLOWED_ORIGINS`: conceitos que não se aplicam a ele.
+
+    Este teste percorre o mesmo caminho do worker — `config.celery`, sem WSGI —
+    com o ambiente pelado. Ele tem que subir.
+    """
+    resultado = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import config.celery; print(config.celery.app.main)",
+        ],
+        cwd=BASE_DIR,
+        env={**os.environ, **VAZIAS, **BASE_DO_AMBIENTE, "CORS_ALLOWED_ORIGINS": ""},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert resultado.returncode == 0, (
+        "o caminho do worker voltou a exigir configuração de HTTP: "
+        + resultado.stdout
+        + resultado.stderr
+    )
+    assert "remind_task" in resultado.stdout
