@@ -1,7 +1,19 @@
 # Plan: remind-task — Produção no Railway, e-mail e busca
 
 **Date:** 2026-08-21
-**Status:** revisado em 2026-08-21 — nenhuma phase iniciada.
+**Status:** Phase 0 **concluída** em 2026-08-24. Decisões registradas:
+
+| Decisão | Escolha | Consequência |
+|---|---|---|
+| Topologia de domínios | **Só `*.up.railway.app`** (sem domínio próprio) | `SameSite=None; Secure` é obrigatório; CSRF explícito e CORS por origem exata entram na Phase 1 — ver *Gatilho disparado* abaixo |
+| Provedor de e-mail | **Resend** (SMTP via `EMAIL_BACKEND`) | Phase 5 desbloqueada; domínio verificado com SPF/DKIM é pré-requisito de envio |
+
+**Gatilho de replanejamento disparado pela Decisão 1.** O plano previa isto: com
+dois registrable domains diferentes, o cookie de refresh só sobrevive com
+`SameSite=None; Secure`. A Phase 1 cresceu para absorver o custo — CSRF
+explícito, CORS por origem exata e validação no boot. Nenhuma outra phase muda.
+
+Revisado em 2026-08-21 — nenhuma phase de implementação iniciada.
 A versão anterior assumia "um host qualquer com Docker" e entregava
 `docker-compose.prod.yml`. **O Railway não roda docker-compose**, então as phases
 de implantação foram refeitas. Acrescentadas notificações por e-mail e busca em
@@ -170,9 +182,15 @@ Apagar a conta precisa invalidar explicitamente.
 
 ## Phases
 
-### Phase 0 — Duas decisões que mudam o trabalho (~45 min)
+### Phase 0 — Duas decisões que mudam o trabalho ✅ concluída 2026-08-24
 
 **Objective:** resolver as bifurcações antes de escrever código.
+
+**Resultado:** `*.up.railway.app` (sem domínio próprio) + **Resend** para
+e-mail. As escolhas e o gatilho que a primeira disparou estão no **Status** no
+topo deste arquivo. A tabela de caminhos abaixo fica como registro do que foi
+pesado — a linha "recomendado" **não** foi a escolhida, e isso é deliberado:
+o custo de um domínio não se justificou nesta fase.
 
 **Decisão 1 — domínios.** Recomendação: **domínio próprio, um só registrable
 domain** (`app.exemplo.com` + `api.exemplo.com`). Mantém `SameSite=Lax`
@@ -210,11 +228,34 @@ por gunicorn.
   `RAILWAY_PUBLIC_DOMAIN`.
 - **WhiteNoise** logo após o `SecurityMiddleware`; `collectstatic` no build da
   imagem, não no start.
-- `AUTH_COOKIE_SAMESITE` por ambiente, com validação no boot: `None` sem
-  `Secure` é combinação que o browser descarta **em silêncio**, então `prod.py`
-  levanta `ImproperlyConfigured` — mesmo padrão que ele já usa para
-  `ALLOWED_HOSTS` vazio.
 - Entrypoint roda `migrate` antes de servir.
+
+**Cresceu pela Decisão 1 (`*.up.railway.app`).** Os quatro itens abaixo não
+estavam no plano original; entraram porque dois registrable domains distintos
+tiram o `Lax` da mesa:
+
+- `AUTH_COOKIE_SAMESITE = "None"` em produção, **sempre** com
+  `AUTH_COOKIE_SECURE = True`. `None` sem `Secure` é combinação que o browser
+  descarta **em silêncio** — a sessão morreria a cada 15 min sem erro visível.
+  `prod.py` levanta `ImproperlyConfigured` nessa combinação, mesmo padrão que
+  ele já usa para `ALLOWED_HOSTS` vazio. Dev continua em `Lax`.
+- **CORS por origem exata.** `CORS_ALLOWED_ORIGINS` com a URL do frontend
+  literal e `CORS_ALLOW_CREDENTIALS = True`. Wildcard é inválido com
+  credenciais — o browser rejeita `Access-Control-Allow-Origin: *` em
+  requisição com cookie, então um `*` aqui falha em runtime, não no boot.
+- **CSRF explícito.** `CSRF_TRUSTED_ORIGINS` precisa listar o domínio do
+  frontend com esquema. Medido: `config/settings/prod.py:61` **já aceita** a
+  variável de ambiente e só cai na derivação a partir de `ALLOWED_HOSTS` quando
+  ela está vazia. Aquela derivação cobria o caso "mesmo pai"; com domínios
+  distintos ela não basta, então isto é preencher a variável no Railway — não
+  há código novo. Idem CORS: `corsheaders` já está em `INSTALLED_APPS` e no
+  middleware (`base.py:36,53`), então a Decisão 1 custa configuração, não
+  dependência.
+- **Teste do trio.** `tests/security/test_cookie_policy.py` afirma, sob
+  `prod.py`: `SameSite=None` implica `Secure`; a combinação `None` + não-`Secure`
+  levanta `ImproperlyConfigured`; e a origem do frontend está em
+  `CSRF_TRUSTED_ORIGINS`. Sem esse teste a regressão é silenciosa por
+  construção.
 
 **Files Touched:**
 `config/settings/base.py` · `config/settings/prod.py` · `Dockerfile` ·
@@ -328,6 +369,11 @@ docker compose exec -T web pytest tests/security/ -q
 ---
 
 ### Phase 5 — Notificação por e-mail
+
+> **Provedor decidido (Phase 0): Resend**, falando SMTP por `EMAIL_BACKEND`.
+> Verificar o domínio (SPF/DKIM) no painel do Resend **antes** de testar envio
+> real — sem isso a entrega falha ou cai em spam, e o `locmem` dos testes não
+> revela isso. A amarração a fornecedor fica só na credencial.
 
 **Objective:** fechar a costura que `alerts/services.py` já deixou aberta.
 
@@ -606,8 +652,10 @@ infra, desde que a Phase 5 espere a decisão de provedor da Phase 0.
 
 ## O que dispara replanejamento
 
-- **A Phase 0 escolher os domínios `*.up.railway.app`** → `SameSite=None` vira
-  obrigatório, e com ele CSRF explícito e CORS por origem exata. A Phase 1 cresce.
+- ~~**A Phase 0 escolher os domínios `*.up.railway.app`**~~ → **DISPARADO em
+  2026-08-24.** `SameSite=None` virou obrigatório, e com ele CSRF explícito e
+  CORS por origem exata. A Phase 1 já foi crescida para absorver isso; ver o
+  bloco "Cresceu pela Decisão 1" nela.
 - **O Postgres gerenciado não permitir `CREATE ROLE`** → a RLS não sobe como
   está. É a barreira do RS01, não um detalhe: sem ela o isolamento volta a ser só
   a camada de queryset. Descobrir isso **na Phase 3, antes de migrar dados** —
