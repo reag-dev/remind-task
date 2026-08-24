@@ -215,15 +215,20 @@ falar SMTP por `EMAIL_BACKEND` para não amarrar o projeto a um fornecedor.
 
 ### Phase 1 — Configuração que o Railway entende 🟡 implementada 2026-08-24
 
-> **Verificação parcial.** Docker não estava disponível na máquina onde isto foi
-> escrito, então os comandos de `docker compose` do bloco **Verify** abaixo
-> **não** foram executados. O que *foi* verificado, num venv limpo:
-> `tests/security/test_cookie_policy.py` (10 passa), `test_transport.py`
-> (14 passa, incluindo `check --deploy --fail-level WARNING`), `ruff check`
-> limpo, `collectstatic` com storage manifest (154 arquivos, 444
-> pós-processados) e as settings de dev subindo inalteradas (`Lax`,
-> `POSTGRES_*`, `ATOMIC_REQUESTS=True`). **Falta rodar em container** — gunicorn
-> servindo de fato e o entrypoint migrando — antes de chamar a phase de fechada.
+> **Verificação parcial — falta só o gunicorn servindo.** Mesclada na main pelo
+> PR #3, com os 3 jobs de CI verdes.
+>
+> Verificado em CI, **dentro do container**: a imagem constrói com o Dockerfile
+> novo, o `collectstatic` roda no build com storage manifest, e a suíte inteira
+> passa — incluindo os testes de RLS, que usam banco real. Verificado também num
+> venv limpo: `test_cookie_policy.py` (10), `test_transport.py` (14, com
+> `check --deploy --fail-level WARNING`), `ruff check` limpo, e as settings de
+> dev inalteradas (`Lax`, `POSTGRES_*`, `ATOMIC_REQUESTS=True`).
+>
+> **O que continua sem exercício: o próprio `docker/entrypoint.sh`.** O CI não o
+> executa, porque cada serviço do compose sobrescreve `command:` — então
+> `migrate` seguido de `exec gunicorn` só será exercido de verdade no primeiro
+> deploy da Phase 3. É o buraco conhecido desta phase; não presumir que passa.
 
 
 **Objective:** a aplicação lê o ambiente que a plataforma entrega, e é servida
