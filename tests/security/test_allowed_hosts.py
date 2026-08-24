@@ -98,7 +98,7 @@ def test_a_variavel_sozinha_tambem_satisfaz():
     """O caminho de quem não está no Railway, ou tem domínio próprio."""
     resultado = _carregar(DJANGO_ALLOWED_HOSTS="api.exemplo.com")
 
-    assert _hosts(resultado) == ["api.exemplo.com"]
+    assert _hosts(resultado) == ["api.exemplo.com", HOST_DO_HEALTHCHECK]
 
 
 def test_os_dois_convivem_sem_duplicar():

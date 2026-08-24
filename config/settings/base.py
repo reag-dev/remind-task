@@ -44,13 +44,26 @@ if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
 # o deploy como reprovado e o domínio passa a devolver 502 — com o container de
 # pé e a aplicação saudável, que é o que torna o sintoma tão confuso.
 #
-# Só entra quando estamos mesmo no Railway. Aceitar um Host que não é nosso tem
-# custo: `request.build_absolute_uri()` passaria a montar URL apontando para
-# `healthcheck.railway.app`. Hoje nada no projeto monta URL a partir do Host —
-# mas a recuperação de senha da Phase 10 vai gerar link por e-mail, e ali o
-# endereço tem que sair de configuração, não do cabeçalho da requisição.
+# A condição para isto entrar é ter ALGUM host configurado — não a presença de
+# `RAILWAY_PUBLIC_DOMAIN`.
+#
+# A primeira versão dependia dela, e era frágil de um jeito específico: se a
+# plataforma não injetasse essa variável no serviço (porque o domínio foi criado
+# depois, porque o serviço foi recriado, por qualquer motivo), a linha não
+# rodava e a correção não fazia NADA — em silêncio, sem erro, sem log. Ficava
+# indistinguível de não ter sido aplicada, que é o pior tipo de correção.
+#
+# `ALLOWED_HOSTS` não-vazio é o sinal certo: significa que este processo atende
+# HTTP em algum lugar configurado, e todo lugar assim pode receber healthcheck.
+# Em desenvolvimento a lista é vazia e nada muda.
+#
+# Aceitar um Host que não é nosso tem custo: `request.build_absolute_uri()`
+# passaria a montar URL apontando para `healthcheck.railway.app`. Hoje nada no
+# projeto monta URL a partir do Host — mas a recuperação de senha da Phase 10
+# vai gerar link por e-mail, e ali o endereço tem que sair de configuração, não
+# do cabeçalho da requisição.
 RAILWAY_HEALTHCHECK_HOST = "healthcheck.railway.app"
-if _railway_domain and RAILWAY_HEALTHCHECK_HOST not in ALLOWED_HOSTS:
+if ALLOWED_HOSTS and RAILWAY_HEALTHCHECK_HOST not in ALLOWED_HOSTS:
     ALLOWED_HOSTS = [*ALLOWED_HOSTS, RAILWAY_HEALTHCHECK_HOST]
 
 # ---------------------------------------------------------------- apps
