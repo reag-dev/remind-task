@@ -347,12 +347,38 @@ docker rm -f rt-front
 
 ---
 
-### Phase 3 — Serviços no Railway 🟡 preparada 2026-08-24 — falta provisionar
+### Phase 3 — Serviços no Railway 🟢 concluída 2026-08-24 — no ar
 
-> Tudo o que é código está pronto e mesclado: `.railway/railway.ts`,
-> `.env.prod.example`, o comando `preflight_db`, o `scan_alerts` do cron e a
-> seção "Deploy no Railway" do README. **O que falta exige a conta:** criar o
-> projeto, provisionar Postgres e Redis, definir os segredos e deployar.
+> **Os seis serviços estão provisionados e respondendo:** Postgres, Redis,
+> `web`, `worker`, `cron-alertas` (`*/15 * * * *`) e `frontend`. A API devolve
+> `{"status":"ok","database":"up"}` e a SPA é servida.
+>
+> **O `preflight_db` passou nos cinco checks**, incluindo o `CREATE ROLE` — que
+> era o risco em aberto capaz de forçar um redesenho do isolamento entre
+> usuários. O RLS funciona no Postgres da plataforma.
+>
+> **A implantação custou quatro correções, e três delas não eram a causa.** O
+> relato completo está em `docs`/artefato de estudo; o resumo:
+>
+> | Correção | Defeito real? | Era a causa do 502? |
+> |---|---|---|
+> | Host do healthcheck em `ALLOWED_HOSTS` (#11, #13) | sim | não |
+> | `/api/health/` isento do SSL redirect (#11) | sim | não |
+> | Escutar em IPv6 (#12) | sim | não |
+> | **`PORT` fixado** (#14) | sim | **sim** |
+>
+> A causa: o Railway deriva a porta de destino do domínio do `EXPOSE` do
+> Dockerfile, mas injeta `PORT=8080` no container. O processo obedecia a
+> variável; a borda discava o `EXPOSE`. A conexão morria antes de virar
+> requisição — por isso o log da aplicação ficava limpo com o domínio em 502.
+>
+> **A lição de método:** as três primeiras hipóteses nasceram de uma correlação
+> lida em `.railway/railway.ts` — um arquivo que **nunca foi aplicado**. Não era
+> observação, era inferência apresentada como fato. O que resolveu foi
+> `railway logs --network`, uma fonte de dados fora da aplicação.
+>
+> ⚠️ **Falta um ajuste de painel:** o Start Command do `cron-alertas` ainda roda
+> só a varredura — ver a nota da Phase 5.
 >
 > **Duas coisas que este plano dizia e estavam erradas:**
 >
@@ -469,9 +495,19 @@ docker compose exec -T web pytest tests/security/ -q
 >    "funcionaria", os alertas virariam `SENT`, o log encheria de e-mails
 >    bonitos e ninguém receberia nada. Falha que se parece com sucesso.
 >
-> **Cron:** os dois comandos rodam no mesmo serviço, separados por `;` e não por
-> `&&` — com `&&`, uma varredura que falhasse pularia a entrega. Registrado em
-> `.railway/railway.ts`.
+> **Cron:** os dois comandos rodam no mesmo serviço, com invólucro de shell:
+>
+> ```
+> sh -c "python manage.py scan_alerts; python manage.py send_alert_emails"
+> ```
+>
+> `;` e não `&&` — com `&&`, uma varredura que falhasse pularia a entrega dos
+> pendentes que já estavam na fila.
+>
+> `sh -c` porque o Railway executa o start command em **exec form** para serviço
+> vindo de Dockerfile: não há shell, e `;` viraria mais um argumento do
+> `manage.py`. Isto foi documentado errado primeiro — o custo de descobrir na
+> plataforma o que a plataforma documenta.
 >
 > **Provedor: SMTP do Gmail**, não o Resend que a Phase 0 escolheu — as duas
 > decisões da Phase 0 eram incompatíveis, e isso só apareceu aqui. Ver a nota

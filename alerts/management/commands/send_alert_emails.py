@@ -9,13 +9,20 @@ falham por motivos diferentes — um dado estranho numa tabela versus um servido
 SMTP fora do ar — e juntá-los faria uma indisponibilidade do provedor de e-mail
 parar também a geração dos alertas in-app, que não dependem de rede nenhuma.
 
-Para rodar os dois no mesmo cron sem que caiam juntos, separe por `;` e não por
-`&&`:
+Para rodar os dois no mesmo cron sem que caiam juntos:
 
-    python manage.py scan_alerts; python manage.py send_alert_emails
+    sh -c "python manage.py scan_alerts; python manage.py send_alert_emails"
 
-Com `&&`, uma varredura que falhe pularia a entrega — que é exatamente o
-acoplamento que este arquivo existe para evitar.
+Duas coisas nessa linha, e as duas já custaram tempo:
+
+`;` e não `&&` — com `&&`, uma varredura que falhe pularia a entrega dos
+pendentes que já estavam na fila, que é exatamente o acoplamento que este
+arquivo existe para evitar.
+
+`sh -c` e não os comandos soltos — o Railway executa o start command em **exec
+form** para serviço vindo de Dockerfile: não há shell no meio, e `;`, `&&` e
+expansão de variável não são interpretados. Sem o invólucro, o `;` vira mais um
+argumento do `manage.py` e o comando morre em "unrecognized arguments".
 """
 
 from django.core.management.base import BaseCommand
