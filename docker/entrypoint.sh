@@ -7,6 +7,16 @@
 # coluna que não existe.
 set -eu
 
+# `manage.py`, `wsgi.py` e `celery.py` usam `os.environ.setdefault(...,
+# "config.settings.dev")`. Esquecer a variável na plataforma nao daria erro
+# nenhum: o container subiria com DEBUG=True, cookie sem Secure, sem HSTS e com
+# a browsable API aberta — a falha exatamente do tipo que este entrypoint
+# existe para tornar impossivel. Producao e o default de quem roda por aqui.
+#
+# O compose nunca chega nesta linha (cada servico sobrescreve `command:`), e
+# ainda define a variavel explicitamente no `.env`.
+export DJANGO_SETTINGS_MODULE="${DJANGO_SETTINGS_MODULE:-config.settings.prod}"
+
 python manage.py migrate --noinput
 
 # ⚠️ Uma réplica só. Com duas ou mais, duas cópias do `migrate` correm juntas no

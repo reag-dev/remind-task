@@ -49,7 +49,12 @@ RUN chmod +x /app/docker/entrypoint.sh
 # exige SECRET_KEY e credencial de banco sem default, de proposito. Nada aqui
 # toca o banco nem entra na imagem final como configuracao — sao locais do RUN,
 # e o processo em producao recebe os valores reais do ambiente da plataforma.
-RUN DJANGO_SETTINGS_MODULE=config.settings.prod     DJANGO_SECRET_KEY=build-only-nao-usada-em-runtime-xJ38fkQ2mZp9     DJANGO_ALLOWED_HOSTS=build.invalid     CORS_ALLOWED_ORIGINS=https://build.invalid     DATABASE_URL=postgres://build:build@build.invalid:5432/build     python manage.py collectstatic --noinput
+RUN DJANGO_SETTINGS_MODULE=config.settings.prod \
+    DJANGO_SECRET_KEY=build-only-nao-usada-em-runtime-xJ38fkQ2mZp9 \
+    DJANGO_ALLOWED_HOSTS=build.invalid \
+    CORS_ALLOWED_ORIGINS=https://build.invalid \
+    DATABASE_URL=postgres://build:build@build.invalid:5432/build \
+    python manage.py collectstatic --noinput
 
 # Documental: em producao quem manda no bind e $PORT, injetado pela plataforma.
 EXPOSE 8000
