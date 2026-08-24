@@ -213,22 +213,18 @@ falar SMTP por `EMAIL_BACKEND` para não amarrar o projeto a um fornecedor.
 
 ---
 
-### Phase 1 — Configuração que o Railway entende 🟡 implementada 2026-08-24
+### Phase 1 — Configuração que o Railway entende 🟢 concluída 2026-08-24
 
-> **Verificação parcial — falta só o gunicorn servindo.** Mesclada na main pelo
-> PR #3, com os 3 jobs de CI verdes.
+> Mesclada pelo PR #3. Verificado em CI, dentro do container: a imagem
+> constrói, `collectstatic` roda no build com storage manifest e a suíte inteira
+> passa, incluindo os testes de RLS com banco real. Em venv limpo:
+> `test_cookie_policy.py` (10), `test_transport.py` (14, com `check --deploy
+> --fail-level WARNING`), `ruff` limpo, dev inalterado.
 >
-> Verificado em CI, **dentro do container**: a imagem constrói com o Dockerfile
-> novo, o `collectstatic` roda no build com storage manifest, e a suíte inteira
-> passa — incluindo os testes de RLS, que usam banco real. Verificado também num
-> venv limpo: `test_cookie_policy.py` (10), `test_transport.py` (14, com
-> `check --deploy --fail-level WARNING`), `ruff check` limpo, e as settings de
-> dev inalteradas (`Lax`, `POSTGRES_*`, `ATOMIC_REQUESTS=True`).
->
-> **O que continua sem exercício: o próprio `docker/entrypoint.sh`.** O CI não o
-> executa, porque cada serviço do compose sobrescreve `command:` — então
-> `migrate` seguido de `exec gunicorn` só será exercido de verdade no primeiro
-> deploy da Phase 3. É o buraco conhecido desta phase; não presumir que passa.
+> **O `docker/entrypoint.sh` ficou sem exercício até a Phase 2**, porque o
+> compose sobrescreve `command:` em todo serviço e o CI nunca o executava. O job
+> `producao` acrescentado na Phase 2 sobe o backend por ele — `migrate` seguido
+> de `exec gunicorn` — e exige 200 no health. É o que fecha esta phase.
 
 
 **Objective:** a aplicação lê o ambiente que a plataforma entrega, e é servida
@@ -291,7 +287,19 @@ docker compose exec -T web python manage.py collectstatic --noinput
 
 ---
 
-### Phase 2 — Imagem de produção do frontend
+### Phase 2 — Imagem de produção do frontend 🟢 concluída 2026-08-24
+
+> Multi-estágio em `frontend/Dockerfile` (`dev` preservado, `producao` novo),
+> `frontend/nginx.conf.template` com fallback de SPA, e `target: dev` fixado no
+> compose. `VITE_API_URL` virou `ARG` com guarda: build sem a variável falha.
+>
+> **O job `producao` do CI fechou também o buraco da Phase 1.** Ele constrói as
+> duas imagens de verdade, sobe o backend pelo `docker/entrypoint.sh`
+> (`migrate` + `exec gunicorn`), exige 200 no health, verifica que o default de
+> settings é produção — e no frontend testa fallback de SPA, 404 de asset
+> ausente e a guarda do `ARG`. Até aqui, o caminho que vai para o Railway era o
+> único do repositório que ninguém nunca executava.
+
 
 **Objective:** servir o `dist/`, não o servidor do Vite.
 
