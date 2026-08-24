@@ -28,12 +28,27 @@ ERRO_DO_PSYCOPG = (
 SEGREDOS = ["db-interno.railway.internal", "10.0.3.7", "5432", "remind_app"]
 
 
-@pytest.fixture
-def banco_fora(monkeypatch):
-    def explode(*args, **kwargs):
+class ConexaoQuebrada:
+    """
+    Dublê no lugar do NOME `connection` dentro de `core.views`.
+
+    A primeira versão deste teste trocava `core.views.connection.cursor` — o
+    atributo do objeto de conexão real, que é compartilhado. Com
+    `ATOMIC_REQUESTS=True`, o Django abre a transação da request **antes** de
+    chamar a view, e essa abertura também pede um cursor: a exceção estourava
+    fora do `try` do health e a resposta era 500, não o 503 que se quer medir.
+
+    Substituir o nome no módulo deixa a conexão de verdade intacta — o resto do
+    ciclo da request continua funcionando, e só a view enxerga o banco fora.
+    """
+
+    def cursor(self, *args, **kwargs):
         raise DatabaseError(ERRO_DO_PSYCOPG)
 
-    monkeypatch.setattr("core.views.connection.cursor", explode)
+
+@pytest.fixture
+def banco_fora(monkeypatch):
+    monkeypatch.setattr("core.views.connection", ConexaoQuebrada())
 
 
 def test_health_ok_quando_o_banco_responde(api_client):

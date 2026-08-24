@@ -10,27 +10,46 @@ o limite derrubar a aplicação junto com o cache, e o limite ser contornável p
 um cabeçalho que o cliente escolhe.
 """
 
+from contextlib import contextmanager
+from unittest.mock import patch
+
 import pytest
 from django.test import override_settings
 from django.urls import reverse
 from rest_framework.test import APIRequestFactory
+from rest_framework.throttling import SimpleRateThrottle
 
 from core.throttling import AnonimoThrottle, UsuarioThrottle
 
 pytestmark = pytest.mark.django_db
 
 
-def taxas(**kwargs):
-    """`override_settings` do bloco REST_FRAMEWORK, preservando o resto."""
+@contextmanager
+def taxas(rates=None, **kwargs):
+    """
+    Ajusta taxas e demais chaves do bloco REST_FRAMEWORK durante o bloco.
+
+    As taxas exigem `patch.object`, e não `override_settings`, e o motivo é uma
+    armadilha do DRF: `SimpleRateThrottle.THROTTLE_RATES` é atributo de
+    **classe**, avaliado uma única vez no import do módulo. Trocar
+    `settings.REST_FRAMEWORK` recarrega `api_settings`, mas a classe continua
+    apontando para o dicionário antigo — e o teste passa a medir a taxa de
+    produção, silenciosamente. Foi assim que a primeira versão destes testes
+    falhou: 3/hour configurado, quarta requisição devolvendo 200.
+
+    As demais chaves (`NUM_PROXIES`) são lidas de `api_settings` no momento da
+    chamada, então para elas `override_settings` funciona.
+    """
     from django.conf import settings
 
-    config = {**settings.REST_FRAMEWORK}
-    config["DEFAULT_THROTTLE_RATES"] = {
-        **config["DEFAULT_THROTTLE_RATES"],
-        **kwargs.pop("rates", {}),
-    }
-    config.update(kwargs)
-    return override_settings(REST_FRAMEWORK=config)
+    config = {**settings.REST_FRAMEWORK, **kwargs}
+    novas_taxas = {**settings.REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"], **(rates or {})}
+
+    with (
+        override_settings(REST_FRAMEWORK=config),
+        patch.object(SimpleRateThrottle, "THROTTLE_RATES", novas_taxas),
+    ):
+        yield
 
 
 # ------------------------------------------------------------ o teto vale
