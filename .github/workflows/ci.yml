@@ -168,6 +168,30 @@ jobs:
           fi
           echo "SECURE_SSL_REDIRECT segue valendo fora do health: $codigo"
 
+      # A rede interna do Railway é IPv6, e é por ela que o edge alcança o
+      # container. Com o gunicorn em `0.0.0.0` — IPv4 puro — não havia nada no
+      # endereço que a plataforma procura: a conexão não se estabelecia. E o
+      # sintoma não tinha pista nenhuma, porque a aplicação subia sem erro e o
+      # log ficava limpo justamente por não chegar requisição alguma. O domínio
+      # devolvia `502 Application failed to respond`.
+      #
+      # Todos os outros passos deste job falam IPv4, e por isso nenhum deles
+      # pegaria uma volta a `0.0.0.0`.
+      - name: O gunicorn escuta em IPv6
+        run: |
+          docker exec rt-api python -c "
+          import http.client, sys
+          try:
+              c = http.client.HTTPConnection('::1', 8000, timeout=5)
+              c.request('GET', '/api/health/', headers={'Host': 'healthcheck.railway.app'})
+              r = c.getresponse()
+          except OSError as erro:
+              sys.exit('ERRO: nada escutando em IPv6 - o edge do Railway nao alcancaria o container (%r)' % erro)
+          print('IPv6 ->', r.status)
+          if r.status != 200:
+              sys.exit('ERRO: IPv6 respondeu %s' % r.status)
+          "
+
       # DJANGO_SETTINGS_MODULE não é passado ao container, de propósito: o
       # entrypoint tem que defaultar para produção sozinho. Se cair no default
       # de dev do `os.environ.setdefault`, o serviço sobe com DEBUG=True, cookie
@@ -257,6 +281,18 @@ jobs:
 
       - name: A SPA é servida
         run: curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+
+      # Mesma causa do passo equivalente do backend: o edge do Railway chega por
+      # IPv6. O nginx assume `ipv6only=on` num listener `[::]`, então o template
+      # traz as duas linhas de `listen` — e é isto que confere que as duas valem.
+      - name: O nginx escuta em IPv6
+        run: |
+          if ! docker exec rt-front wget -qO- http://[::1]:8080/ >/dev/null; then
+            echo "::error::o nginx não atende em IPv6 — o edge do Railway não alcançaria o container e o domínio responderia 502"
+            docker exec rt-front cat /etc/nginx/conf.d/default.conf | head -20
+            exit 1
+          fi
+          echo "IPv6: ok"
 
       # O fallback. Sem `try_files ... /index.html`, recarregar uma rota do
       # React Router dá 404 — e o bug só aparece em deep link, nunca navegando.

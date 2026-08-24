@@ -26,8 +26,21 @@ python manage.py migrate --noinput
 #
 # `exec` faz o gunicorn virar o PID 1: sem ele, o shell fica no meio e o
 # SIGTERM do deploy não chega aos workers, que só morrem no timeout.
+#
+# `[::]` e NÃO `0.0.0.0`, e isso não é detalhe de estilo.
+#
+# A rede interna do Railway é IPv6, e é por ela que o edge e o healthcheck
+# alcançam o container. Escutando em `0.0.0.0` — que é IPv4 puro — não há nada
+# no endereço que a plataforma procura: a conexão nunca se estabelece. O sintoma
+# é cruel de diagnosticar porque a aplicação sobe perfeitamente, sem um erro
+# sequer no log, e o domínio responde `502 Application failed to respond` — o
+# log fica limpo justamente porque requisição nenhuma chega até ele.
+#
+# `[::]` cobre os dois: no Linux, com o `net.ipv6.bindv6only=0` que é o padrão,
+# um socket IPv6 aceita também conexão IPv4 mapeada. Por isso a porta continua
+# alcançável pelo compose e pelo CI, que falam IPv4.
 exec gunicorn config.wsgi:application \
-    --bind "0.0.0.0:${PORT:-8000}" \
+    --bind "[::]:${PORT:-8000}" \
     --workers "${GUNICORN_WORKERS:-3}" \
     --access-logfile - \
     --error-logfile -
