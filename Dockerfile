@@ -27,11 +27,40 @@ RUN apt-get update \
 COPY docker/certs/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 
+# dev.txt por padrao para o compose (a suite roda dentro do container); a
+# imagem de producao passa `--build-arg REQUIREMENTS=base.txt` e nao carrega
+# pytest, ruff nem factory-boy.
+ARG REQUIREMENTS=dev.txt
+
 COPY requirements/ requirements/
-RUN pip install --upgrade pip && pip install -r requirements/dev.txt
+RUN pip install --upgrade pip && pip install -r "requirements/${REQUIREMENTS}"
 
 COPY . .
 
+# O bit de execucao nao sobrevive de forma confiavel a um working copy Windows,
+# e a falha e opaca ("exec format error" / "permission denied" no start).
+RUN chmod +x /app/docker/entrypoint.sh
+
+# collectstatic no BUILD, nao no start: o start ja paga o migrate, e um
+# ManifestStaticFilesStorage com arquivo faltando deve quebrar aqui — onde o
+# deploy ainda nao trocou o trafego — e nao no primeiro request.
+#
+# As variaveis abaixo existem so para o modulo de settings importar: base.py
+# exige SECRET_KEY e credencial de banco sem default, de proposito. Nada aqui
+# toca o banco nem entra na imagem final como configuracao — sao locais do RUN,
+# e o processo em producao recebe os valores reais do ambiente da plataforma.
+RUN DJANGO_SETTINGS_MODULE=config.settings.prod \
+    DJANGO_SECRET_KEY=build-only-nao-usada-em-runtime-xJ38fkQ2mZp9 \
+    DJANGO_ALLOWED_HOSTS=build.invalid \
+    CORS_ALLOWED_ORIGINS=https://build.invalid \
+    DATABASE_URL=postgres://build:build@build.invalid:5432/build \
+    python manage.py collectstatic --noinput
+
+# Documental: em producao quem manda no bind e $PORT, injetado pela plataforma.
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# CMD, nao ENTRYPOINT, e a diferenca importa: o compose sobrescreve o comando de
+# `web`, `worker` e `beat` (ver `command:` em cada servico). Com ENTRYPOINT, o
+# `command:` viraria *argumento* do entrypoint, que os ignora e sobe gunicorn de
+# qualquer jeito — o worker do Celery viraria um segundo servidor web, calado.
+CMD ["/app/docker/entrypoint.sh"]

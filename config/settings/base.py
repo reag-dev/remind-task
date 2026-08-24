@@ -7,6 +7,7 @@ Nada aqui pode assumir DEBUG=True. Ajustes de ambiente ficam em dev.py / prod.py
 from datetime import timedelta
 from pathlib import Path
 
+import dj_database_url
 from celery.schedules import crontab
 from decouple import Csv, config
 
@@ -15,6 +16,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 SECRET_KEY = config("DJANGO_SECRET_KEY")
 DEBUG = False
 ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="", cast=Csv())
+
+# O Railway só conhece o domínio público do serviço depois de criá-lo, e ele
+# muda se o serviço for recriado. Deixar que a plataforma se anuncie evita a
+# volta clássica: deploy verde, e todo request respondendo 400 DisallowedHost
+# porque ninguém copiou o domínio novo para a variável.
+_railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="")
+if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, _railway_domain]
 
 # ---------------------------------------------------------------- apps
 
@@ -52,6 +61,11 @@ INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    # Imediatamente após o SecurityMiddleware, como a doc do WhiteNoise exige:
+    # os estáticos são servidos sem pagar o resto da pilha, mas ainda depois dos
+    # redirects e headers de segurança — servir estático em http:// puro
+    # anularia o SECURE_SSL_REDIRECT.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -85,19 +99,34 @@ TEMPLATES = [
 
 # ---------------------------------------------------------------- database
 
-DATABASES = {
-    "default": {
+# DATABASE_URL é o que plataformas gerenciadas (Railway) injetam; os POSTGRES_*
+# são o caminho do compose de desenvolvimento. A URL vence quando existe, e o
+# compose não regride.
+_database_url = config("DATABASE_URL", default="")
+
+if _database_url:
+    _default_db = dj_database_url.parse(_database_url)
+else:
+    _default_db = {
         "ENGINE": "django.db.backends.postgresql",
         "NAME": config("POSTGRES_DB"),
         "USER": config("POSTGRES_USER"),
         "PASSWORD": config("POSTGRES_PASSWORD"),
         "HOST": config("POSTGRES_HOST", default="db"),
         "PORT": config("POSTGRES_PORT", default="5432"),
-        # Phase 7 (RLS) depende disto: a GUC app.user_id é setada com SET LOCAL
-        # dentro da transação do request, então toda request precisa de uma.
-        "ATOMIC_REQUESTS": True,
     }
-}
+
+# ATOMIC_REQUESTS é aplicado DEPOIS, e fora do if, de propósito.
+#
+# `dj_database_url.parse()` devolve um dicionário novo — escrever
+# `DATABASES["default"] = parse(...)` é a forma óbvia de perder esta chave sem
+# que nada reclame, porque a RLS só falha em runtime: a GUC app.user_id é setada
+# com SET LOCAL, que exige uma transação aberta. Sem ATOMIC_REQUESTS o SET LOCAL
+# morre no autocommit e o isolamento cai para a camada de queryset.
+# `tests/security/test_cookie_policy.py` trava isto nos dois caminhos.
+_default_db["ATOMIC_REQUESTS"] = True
+
+DATABASES = {"default": _default_db}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -149,7 +178,11 @@ SIMPLE_JWT = {
 # Refresh token vai em cookie httpOnly, nunca em localStorage nem no corpo da
 # resposta: JS da página não consegue lê-lo, o que tira o XSS do jogo.
 AUTH_COOKIE_NAME = "refresh_token"
-AUTH_COOKIE_SECURE = True  # dev.py sobrescreve para permitir http://localhost
+# Vem do ambiente para que a guarda de prod.py (SameSite=None exige Secure)
+# seja testável: um valor que só existe como literal no código não tem como ser
+# exercitado pelo caminho de erro. dev.py sobrescreve para permitir
+# http://localhost, que não é origem segura.
+AUTH_COOKIE_SECURE = config("AUTH_COOKIE_SECURE", default=True, cast=bool)
 AUTH_COOKIE_HTTPONLY = True
 AUTH_COOKIE_SAMESITE = "Lax"
 AUTH_COOKIE_PATH = "/api/auth/"
@@ -177,6 +210,16 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    # Comprime e versiona por hash no `collectstatic`, o que permite cache
+    # longo. "Manifest" é o detalhe que morde: um arquivo referenciado e
+    # ausente vira erro no collectstatic, no build — e não um 500 em produção.
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
+    },
+}
 
 # ---------------------------------------------------------------- DRF
 

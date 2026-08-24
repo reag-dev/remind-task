@@ -213,7 +213,18 @@ falar SMTP por `EMAIL_BACKEND` para não amarrar o projeto a um fornecedor.
 
 ---
 
-### Phase 1 — Configuração que o Railway entende
+### Phase 1 — Configuração que o Railway entende 🟡 implementada 2026-08-24
+
+> **Verificação parcial.** Docker não estava disponível na máquina onde isto foi
+> escrito, então os comandos de `docker compose` do bloco **Verify** abaixo
+> **não** foram executados. O que *foi* verificado, num venv limpo:
+> `tests/security/test_cookie_policy.py` (10 passa), `test_transport.py`
+> (14 passa, incluindo `check --deploy --fail-level WARNING`), `ruff check`
+> limpo, `collectstatic` com storage manifest (154 arquivos, 444
+> pós-processados) e as settings de dev subindo inalteradas (`Lax`,
+> `POSTGRES_*`, `ATOMIC_REQUESTS=True`). **Falta rodar em container** — gunicorn
+> servindo de fato e o entrypoint migrando — antes de chamar a phase de fechada.
+
 
 **Objective:** a aplicação lê o ambiente que a plataforma entrega, e é servida
 por gunicorn.

@@ -62,6 +62,39 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv()) or
     origin for origin in map(_csrf_origin, ALLOWED_HOSTS) if origin  # noqa: F405
 ]
 
+if not CORS_ALLOWED_ORIGINS:  # noqa: F405
+    raise ImproperlyConfigured(
+        "CORS_ALLOWED_ORIGINS é obrigatório em produção: o frontend está em "
+        "outra origem e nenhuma chamada da SPA passaria."
+    )
+
+# ------------------------------------------------------- cookie de refresh
+
+# A topologia decidida na Phase 0 é `*.up.railway.app` para os dois serviços.
+# `up.railway.app` está na Public Suffix List, então `web-xxxx.up.railway.app` e
+# `front-yyyy.up.railway.app` são **registrable domains diferentes** — não é o
+# caso "mesmo site" que o SameSite=Lax cobre. Com Lax, o cookie de refresh
+# simplesmente não seria enviado, e a sessão morreria a cada 15 minutos sem erro
+# nenhum: o usuário só cairia na tela de login.
+AUTH_COOKIE_SAMESITE = config("AUTH_COOKIE_SAMESITE", default="None")
+
+_SAMESITE_VALIDOS = {"Lax", "Strict", "None"}
+if AUTH_COOKIE_SAMESITE not in _SAMESITE_VALIDOS:
+    raise ImproperlyConfigured(
+        f"AUTH_COOKIE_SAMESITE={AUTH_COOKIE_SAMESITE!r} não é válido; "
+        f"use um de {sorted(_SAMESITE_VALIDOS)}."
+    )
+
+# `None` sem `Secure` é a combinação que o browser descarta **em silêncio**: o
+# cookie não é recusado com erro, ele só nunca chega. Falhar no boot é a única
+# forma de isso não virar um bug de sessão intermitente em produção — mesmo
+# padrão que ALLOWED_HOSTS vazio, logo acima.
+if AUTH_COOKIE_SAMESITE == "None" and not AUTH_COOKIE_SECURE:  # noqa: F405
+    raise ImproperlyConfigured(
+        "AUTH_COOKIE_SAMESITE='None' exige AUTH_COOKIE_SECURE=True; sem Secure "
+        "o browser descarta o cookie sem avisar."
+    )
+
 # Não vaza a URL interna (que carrega ids) para sites de terceiros.
 SECURE_REFERRER_POLICY = "same-origin"
 
