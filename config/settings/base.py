@@ -6,6 +6,7 @@ Nada aqui pode assumir DEBUG=True. Ajustes de ambiente ficam em dev.py / prod.py
 
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 
 import dj_database_url
 from celery.schedules import crontab
@@ -14,6 +15,12 @@ from decouple import Csv, config
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 SECRET_KEY = config("DJANGO_SECRET_KEY")
+
+# Superfícies que não são a API em si. Ligadas por padrão porque em
+# desenvolvimento são ferramenta de trabalho; `prod.py` inverte os dois
+# defaults — publicá-las é escolha, não consequência de subir o serviço.
+EXPOSE_ADMIN = config("EXPOSE_ADMIN", default=True, cast=bool)
+EXPOSE_API_DOCS = config("EXPOSE_API_DOCS", default=True, cast=bool)
 DEBUG = False
 ALLOWED_HOSTS = config("DJANGO_ALLOWED_HOSTS", default="", cast=Csv())
 
@@ -246,6 +253,71 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "core.pagination.PaginacaoPadrao",
     "PAGE_SIZE": 50,
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    # RS —  limite de taxa. O `django-axes` cobre só o login, por tentativa de
+    # senha; tudo o mais estava sem teto nenhum.
+    #
+    # `user` e `anon` valem para toda view. A exportação tem teto próprio,
+    # declarado na própria action — ver `core.throttling.ExportacaoThrottle`.
+    # Subclasses próprias, não as do DRF: elas liberam a requisição quando o
+    # cache não responde, em vez de devolver 500. Ver core/throttling.py — o
+    # motivo está escrito lá, e é o que impede esta phase de transformar uma
+    # queda do Redis em queda da aplicação.
+    "DEFAULT_THROTTLE_CLASSES": (
+        "core.throttling.UsuarioThrottle",
+        "core.throttling.AnonimoThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "user": config("THROTTLE_USER", default="1000/hour"),
+        # Anônimo é bem mais apertado: sem sessão, os únicos caminhos abertos
+        # são login, registro e health — nenhum deles tem uso legítimo em
+        # rajada.
+        "anon": config("THROTTLE_ANON", default="60/hour"),
+        # O export transmite a queryset INTEIRA em streaming, sem paginar — é o
+        # endpoint mais caro do sistema por larga margem. Um teto separado
+        # impede que ele consuma a cota geral do usuário e, principalmente, que
+        # alguém o use em laço.
+        "export": config("THROTTLE_EXPORT", default="20/hour"),
+    },
+    # Sem isto, o limite anônimo é contornável trivialmente.
+    #
+    # O `get_ident` do DRF, quando `NUM_PROXIES` é None, usa o cabeçalho
+    # `X-Forwarded-For` INTEIRO como identidade. Quem manda um XFF diferente a
+    # cada request vira um cliente novo a cada request, e o teto nunca é
+    # alcançado. Com o número de proxies declarado, o DRF conta de trás para
+    # frente e pega o endereço que o proxy escreveu — o único que o cliente não
+    # controla. Em produção, atrás do proxy da plataforma, é 1.
+    "NUM_PROXIES": config("NUM_PROXIES", default=None, cast=lambda v: int(v) if v else None),
+}
+
+# ---------------------------------------------------------------- cache
+
+# O throttle guarda os contadores no cache. Com o LocMemCache padrão, cada
+# worker do gunicorn teria o SEU contador: três workers, três vezes o limite
+# configurado — e tudo zerado a cada deploy. O teto pareceria valer sem valer.
+#
+# DB 1 para não dividir espaço de chaves com o Celery, que usa a 0.
+def _redis_db(url: str, db: int) -> str:
+    """
+    Troca o número do banco numa URL de Redis.
+
+    Feito com `urlparse`, e não com `str.replace("/0", "/1")`: a substituição
+    ingênua acerta o caso comum e erra calado quando a URL não traz banco
+    (`redis://host:6379`) ou quando `/0` aparece na senha — e o resultado é a
+    aplicação usando o mesmo banco do Celery, ou uma URL inválida.
+    """
+    parts = urlparse(url)
+    return urlunparse(parts._replace(path=f"/{db}"))
+
+
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        # DB 1 para não dividir espaço de chaves com o Celery, que usa a 0.
+        "LOCATION": config(
+            "CACHE_URL",
+            default=_redis_db(config("REDIS_URL", default="redis://redis:6379/0"), 1),
+        ),
+    }
 }
 
 SPECTACULAR_SETTINGS = {

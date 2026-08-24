@@ -9,6 +9,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 
 from core.dates import user_today
+from core.throttling import ExportacaoThrottle
 from exports.services import ALLOWED_DELIMITERS, filename_for, stream_rows
 from records.filters import NullsLastOrderingFilter, RecordFilter, RecordFilterBackend
 from records.models import Record
@@ -121,7 +122,11 @@ class RecordViewSet(viewsets.ModelViewSet):
         ],
         responses={(200, "text/csv"): OpenApiTypes.BINARY},
     )
-    @action(detail=False, methods=["get"])
+    # Teto próprio, substituindo o geral nesta action: sem ele a exportação
+    # teria o mesmo limite de um GET de uma página, apesar de transmitir a
+    # tabela inteira em streaming. A taxa vem de
+    # DEFAULT_THROTTLE_RATES["export"].
+    @action(detail=False, methods=["get"], throttle_classes=[ExportacaoThrottle])
     def export(self, request, table_id=None):
         """
         RS08 — a exportação NÃO tem caminho de consulta próprio.

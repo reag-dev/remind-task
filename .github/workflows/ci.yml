@@ -97,8 +97,11 @@ jobs:
       - name: Preparar .env
         run: cp .env.example .env
 
-      - name: Subir o banco
-        run: docker compose up -d --wait db
+      # Redis junto: o throttle guarda os contadores no cache, e sem ele a
+      # imagem de producao exercitaria apenas o caminho de falha (que libera a
+      # requisicao). O objetivo aqui e o caminho normal.
+      - name: Subir banco e cache
+        run: docker compose up -d --wait db redis
 
       # `REQUIREMENTS=base.txt` é o ponto: a imagem de produção não leva pytest,
       # ruff nem factory-boy. Se algum código de aplicação importar algo que só
@@ -110,7 +113,7 @@ jobs:
       # `--network host` para alcançar o Postgres publicado pelo compose.
       - name: Servir com gunicorn
         run: |
-          docker run -d --name rt-api --network host             -e PORT=8000             -e DJANGO_SECRET_KEY=ci-only-n7Qw2Kx9Lp4Zr8Vt6Ys1Bd3Fg5Hj0Mn7Pq2Rs4             -e DJANGO_ALLOWED_HOSTS=localhost             -e CORS_ALLOWED_ORIGINS=https://front.invalid             -e DATABASE_URL=postgres://remind:remind@localhost:5432/remind             rt-api:prod
+          docker run -d --name rt-api --network host             -e PORT=8000             -e DJANGO_SECRET_KEY=ci-only-n7Qw2Kx9Lp4Zr8Vt6Ys1Bd3Fg5Hj0Mn7Pq2Rs4             -e DJANGO_ALLOWED_HOSTS=localhost             -e CORS_ALLOWED_ORIGINS=https://front.invalid             -e DATABASE_URL=postgres://remind:remind@localhost:5432/remind             -e CACHE_URL=redis://localhost:6379/1             rt-api:prod
 
       # `X-Forwarded-Proto: https` não é truque de teste: é exatamente o header
       # que o proxy do Railway injeta, e é o que `SECURE_PROXY_SSL_HEADER` lê.
@@ -168,6 +171,29 @@ jobs:
             exit 1
           fi
           echo "404 sem página de debug: ok"
+
+      # O limite de taxa, exercitado na imagem de producao contra o Redis de
+      # verdade. Anonimo e 60/hora por default; 70 requisicoes tem que esbarrar.
+      #
+      # Se este passo passar a devolver 200 em todas, o provavel e o cache ter
+      # caido para LocMem (contador por worker) ou o fail-open estar mascarando
+      # uma queda do Redis — as duas coisas que fazem o teto existir so no papel.
+      - name: O limite de taxa vale de ponta a ponta
+        run: |
+          bateu429=nao
+          for i in $(seq 1 70); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}'               -H 'X-Forwarded-Proto: https'               http://localhost:8000/api/health/)
+            if [ "$codigo" = "429" ]; then
+              echo "429 na requisicao $i — limite aplicado"
+              bateu429=sim
+              break
+            fi
+          done
+          if [ "$bateu429" = "nao" ]; then
+            echo "::error::70 requisicoes anonimas sem nenhum 429 — o limite nao esta valendo"
+            docker logs rt-api | tail -30
+            exit 1
+          fi
 
       - name: Derrubar o backend
         run: docker rm -f rt-api

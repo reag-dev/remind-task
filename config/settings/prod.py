@@ -95,6 +95,22 @@ if AUTH_COOKIE_SAMESITE == "None" and not AUTH_COOKIE_SECURE:  # noqa: F405
         "o browser descarta o cookie sem avisar."
     )
 
+# --------------------------------------------------- superfície pública
+
+# O schema OpenAPI é a planta da API: rotas, campos, formatos e mensagens de
+# erro, tudo num arquivo. É excelente durante o desenvolvimento e é
+# reconhecimento pronto para quem estiver sondando. O Admin, idem — é uma tela
+# de login a mais, com CSRF de formulário e enumeração de modelos atrás.
+#
+# Quem precisar dos dois em produção liga explicitamente, e assume a escolha.
+EXPOSE_ADMIN = config("EXPOSE_ADMIN", default=False, cast=bool)
+EXPOSE_API_DOCS = config("EXPOSE_API_DOCS", default=False, cast=bool)
+
+# Atrás do proxy da plataforma. Ver a nota de NUM_PROXIES em base.py: sem um
+# número declarado, o limite anônimo é contornável só mandando um
+# `X-Forwarded-For` diferente a cada requisição.
+REST_FRAMEWORK["NUM_PROXIES"] = config("NUM_PROXIES", default=1, cast=int)  # noqa: F405
+
 # Não vaza a URL interna (que carrega ids) para sites de terceiros.
 SECURE_REFERRER_POLICY = "same-origin"
 
