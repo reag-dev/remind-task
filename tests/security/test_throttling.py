@@ -113,6 +113,27 @@ def test_export_esgota_antes_da_cota_geral(auth_client, table, columns):
 # --------------------------------------------- o cache não derruba o serviço
 
 
+class CacheQuebrado:
+    """
+    Cache que levanta em qualquer operação — um Redis fora do ar.
+
+    A primeira versão deste teste remendava
+    `SimpleRateThrottle.get_cache_key`, e não funcionou: `AnonRateThrottle`
+    **redefine** esse método, então a substituição na classe base nunca era
+    alcançada, o throttle rodou de verdade e devolveu 429.
+
+    Derrubar o próprio cache é mais fiel de qualquer forma: é onde a falha
+    acontece na realidade, e cobre qualquer caminho que o DRF use para chegar
+    nele.
+    """
+
+    def get(self, *args, **kwargs):
+        raise ConnectionError("Redis fora do ar")
+
+    def set(self, *args, **kwargs):
+        raise ConnectionError("Redis fora do ar")
+
+
 def test_cache_fora_do_ar_libera_em_vez_de_devolver_500(api_client, monkeypatch):
     """
     O motivo de `core.throttling` existir.
@@ -123,12 +144,11 @@ def test_cache_fora_do_ar_libera_em_vez_de_devolver_500(api_client, monkeypatch)
     indisponibilidade que ela existe para reduzir.
     """
 
-    def explode(*args, **kwargs):
-        raise ConnectionError("Redis fora do ar")
-
-    monkeypatch.setattr("rest_framework.throttling.SimpleRateThrottle.get_cache_key", explode)
+    monkeypatch.setattr(SimpleRateThrottle, "cache", CacheQuebrado())
 
     with taxas(rates={"anon": "1/hour"}):
+        # 1/hora: sem o fail-open, a segunda requisição já seria 429 — ou 500,
+        # se a exceção do cache subisse pela view.
         for _ in range(5):
             assert api_client.get(reverse("core:health")).status_code == 200
 
