@@ -1,0 +1,53 @@
+# Template, não conf: a imagem oficial do nginx roda `envsubst` sobre tudo em
+# /etc/nginx/templates/*.template no start e escreve o resultado em
+# /etc/nginx/conf.d/. É o que permite escutar na porta que o Railway sorteia.
+#
+# `envsubst` aqui só troca variáveis que existem no ambiente — é o que a
+# entrypoint da imagem oficial garante ao montar a lista de nomes definidos.
+# Por isso `$uri` e `$http_*` abaixo sobrevivem intactos: não são variáveis de
+# ambiente, são do nginx. `${PORT}` é a única que sai substituída.
+server {
+    listen       ${PORT};
+    server_name  _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # A SPA é servida como arquivo estático; nada aqui precisa saber o nome do
+    # servidor, e anunciá-lo só ajuda quem varre versão vulnerável.
+    server_tokens off;
+
+    gzip              on;
+    gzip_vary         on;
+    gzip_min_length   1024;
+    gzip_proxied      any;
+    gzip_types        text/plain text/css application/javascript
+                      application/json image/svg+xml;
+
+    # O Vite versiona os arquivos de /assets/ por hash no nome, então o conteúdo
+    # de uma URL nunca muda: cache longo e `immutable` são seguros, e o browser
+    # deixa de revalidar. `try_files ... =404` (e não o fallback abaixo) é
+    # deliberado: um asset ausente deve dar 404, não devolver o HTML da SPA —
+    # senão o browser recebe `<!doctype html>` com Content-Type de JavaScript e
+    # o erro que aparece é um "Unexpected token '<'" que não explica nada.
+    location /assets/ {
+        expires    1y;
+        add_header Cache-Control "public, immutable";
+        try_files  $uri =404;
+    }
+
+    # O index é o único arquivo com nome fixo, e é ele que aponta para os
+    # bundles novos a cada deploy. Se ficar em cache, o usuário continua
+    # carregando os assets da versão anterior — que ainda existem, então o
+    # sintoma é uma app velha sem nenhum erro visível.
+    location = /index.html {
+        add_header Cache-Control "no-store";
+    }
+
+    # Fallback da SPA. Sem isto, as 8 rotas do App.tsx funcionam ao navegar
+    # (o React Router troca a URL no cliente) e dão 404 ao recarregar a página
+    # ou abrir o link direto — o nginx procuraria um arquivo `/tabelas/abc`.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
