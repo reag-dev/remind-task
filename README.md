@@ -97,6 +97,29 @@ Não use `pip install --trusted-host`: isso desliga a verificação TLS.
 - `http://localhost:8000/api/` — DRF Browsable API
 - `http://localhost:8000/admin/` — Django Admin
 
+> **Em produção, o Swagger, o schema e o Admin não sobem.** `prod.py` inverte os
+> defaults de `EXPOSE_API_DOCS` e `EXPOSE_ADMIN`: o schema OpenAPI é a planta da
+> API — rotas, campos, formatos e mensagens de erro num arquivo só — e publicá-lo
+> passa a ser escolha explícita. As rotas não existem, em vez de existirem e
+> responderem 403: um 404 não confirma que há algo ali.
+
+### Limite de taxa
+
+Todo endpoint tem teto, com as taxas vindas do ambiente
+(`THROTTLE_USER`, `THROTTLE_ANON`, `THROTTLE_EXPORT`). A exportação tem o seu,
+mais apertado, porque transmite a queryset inteira em streaming.
+
+Dois detalhes que não são óbvios e estão testados:
+
+- **Os contadores vivem no Redis, não em memória.** Com o `LocMemCache` padrão,
+  cada worker do gunicorn teria o seu contador — três workers, três vezes o
+  limite, e tudo zerado a cada deploy.
+- **O limitador falha aberto.** Se o cache não responde, a requisição passa e
+  fica um aviso no log. O contrário transformaria uma queda do Redis, que hoje
+  só interrompe os alertas, em indisponibilidade total da API — uma medida de
+  proteção não deve ampliar o que ela existe para reduzir. Ver
+  `core/throttling.py`.
+
 ---
 
 ## Frontend

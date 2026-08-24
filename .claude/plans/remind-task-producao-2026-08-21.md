@@ -369,7 +369,24 @@ curl -fsS -o /dev/null -w '%{http_code}\n' https://<dominio-front>/tabelas/abc  
 
 ---
 
-### Phase 4 — Endurecimento da superfície pública
+### Phase 4 — Endurecimento da superfície pública 🟢 concluída 2026-08-24
+
+> Throttling com taxas do ambiente e teto separado no export; health que não
+> vaza mais host/porta/usuário; Admin e `/api/docs/` desligados por default em
+> produção.
+>
+> **Duas coisas que o plano não previa e apareceram ao implementar:**
+>
+> 1. **`NUM_PROXIES` era obrigatório, não detalhe.** Sem ele o `get_ident` do
+>    DRF usa o `X-Forwarded-For` inteiro como identidade, e quem manda um valor
+>    diferente a cada requisição nunca alcança o teto. Medido: `1.2.3.4,
+>    203.0.113.7` e `9.9.9.9, 203.0.113.7` viravam clientes distintos.
+> 2. **O cache precisou sair do LocMem**, senão cada worker do gunicorn teria o
+>    seu contador — e, junto, precisou de um limitador que **falha aberto**
+>    (`core/throttling.py`), para uma queda do Redis não virar 500 em toda
+>    requisição. Sem isso a phase ampliaria a indisponibilidade que ela existe
+>    para reduzir.
+
 
 **Objective:** fechar o que só aparece sob tráfego real.
 

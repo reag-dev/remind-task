@@ -5,6 +5,23 @@ from rest_framework_simplejwt.tokens import RefreshToken
 PASSWORD = "Contrato!Vencendo#2026"
 
 
+@pytest.fixture(autouse=True)
+def cache_limpo():
+    """
+    Zera o cache antes de cada teste.
+
+    Os contadores de throttle vivem ali. Sem isto, um teste que faz muitas
+    requisições deixa o contador cheio para o seguinte, e a suíte passa a
+    depender da ORDEM de execução — o tipo de falha que aparece só quando
+    alguém acrescenta um teste no meio, e some ao rodar o arquivo sozinho.
+    """
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()
+
+
 @pytest.fixture
 def api_client():
     return APIClient()
