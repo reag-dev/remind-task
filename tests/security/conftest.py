@@ -69,3 +69,20 @@ def mine(db, user) -> Resources:
 @pytest.fixture
 def theirs(db, other_user) -> Resources:
     return build_resources(other_user, "Contratos de B")
+
+
+# ------------------------------------------------- fixtures vindas de alerts
+
+# `alert_table` (com coluna sensível) e `make_record` moram no conftest de
+# `alerts/tests/`, que não alcança este diretório. Re-exportadas aqui, e não
+# copiadas: uma segunda definição da mesma tabela envelheceria em silêncio — no
+# dia em que a coluna sensível mudasse de nome lá, `test_email_redaction.py`
+# continuaria passando medindo outra coisa.
+#
+# O conftest é o lugar certo para isto. Importar no próprio módulo de teste
+# funciona, mas os parâmetros das funções sombreiam os nomes e o ruff acusa
+# F811 — corretamente, porque ali a importação de fato não é usada.
+from alerts.tests.conftest import (  # noqa: E402, F401
+    alert_table,
+    make_record,
+)

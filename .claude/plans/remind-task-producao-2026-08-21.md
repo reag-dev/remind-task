@@ -435,7 +435,29 @@ docker compose exec -T web pytest tests/security/ -q
 
 ---
 
-### Phase 5 — Notificação por e-mail
+### Phase 5 — Notificação por e-mail 🟢 concluída 2026-08-24
+
+> **Duas coisas que o plano não previa, resolvidas na implementação:**
+>
+> 1. **Retry precisou de estado no banco.** "Retry com limite e backoff" não
+>    cabia sem contador: o cron roda a cada 15 minutos e não sabe o que a
+>    execução anterior fez. Sem `delivery_attempts`, um endereço inexistente
+>    seria retentado para sempre; sem `last_attempt_at`, não há backoff.
+>    Migration `alerts.0002`. `updated_at` foi considerado e descartado —
+>    qualquer outra escrita no alerta o move.
+> 2. **O default de `EMAIL_BACKEND` é console em dev e SMTP em produção.**
+>    Herdar o console em produção seria a pior falha possível: o envio
+>    "funcionaria", os alertas virariam `SENT`, o log encheria de e-mails
+>    bonitos e ninguém receberia nada. Falha que se parece com sucesso.
+>
+> **Cron:** os dois comandos rodam no mesmo serviço, separados por `;` e não por
+> `&&` — com `&&`, uma varredura que falhasse pularia a entrega. Registrado em
+> `.railway/railway.ts`.
+>
+> ⚠️ **Falta fora do código:** verificar o domínio (SPF/DKIM) no painel do
+> Resend e preencher `EMAIL_HOST_PASSWORD` e `DEFAULT_FROM_EMAIL` nos serviços.
+> Os testes usam `locmem`, que aceita qualquer endereço — **nada na suíte
+> revela um domínio não verificado**.
 
 > **Provedor decidido (Phase 0): Resend**, falando SMTP por `EMAIL_BACKEND`.
 > Verificar o domínio (SPF/DKIM) no painel do Resend **antes** de testar envio

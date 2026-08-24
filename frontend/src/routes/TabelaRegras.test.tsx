@@ -114,7 +114,11 @@ describe("TabelaRegras", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
   });
 
-  it("nao envia `channel`, porque so `in_app` esta implementado", async () => {
+  // Este teste exigia o oposto ate a Phase 5: que `channel` NAO fosse enviado,
+  // porque a entrega por e-mail nao existia e escolher `email` criaria uma
+  // regra que nunca dispara nada. Foi reescrito, e nao remendado — a premissa
+  // dele morreu quando `alerts.send_pending_emails` passou a entregar.
+  it("envia o canal escolhido", async () => {
     let corpo: Record<string, unknown> | null = null;
     servidor.use(
       ...cenario(),
@@ -127,12 +131,26 @@ describe("TabelaRegras", () => {
     const usuario = digitador();
 
     await usuario.type(await screen.findByLabelText("Nova regra (dias)"), "7");
+    await usuario.selectOptions(screen.getByLabelText("Onde avisar"), "email");
     await usuario.click(screen.getByRole("button", { name: "Adicionar" }));
 
-    await waitFor(() => expect(corpo).not.toBeNull());
-    // Deixar escolher `email` criaria uma regra que nunca dispara nada, em
-    // silencio. O default do modelo ja e `in_app`.
-    expect(corpo).toEqual({ offset_days: 7 });
+    await waitFor(() => expect(corpo).toEqual({ offset_days: 7, channel: "email" }));
+  });
+
+  it("avisa o que o e-mail leva antes de o usuario escolher", async () => {
+    // Um e-mail sai do sistema e fica na caixa de entrada de alguem para
+    // sempre. Dizer o que ele carrega e o que permite decidir com informacao —
+    // e o aviso so faz sentido quando o canal esta selecionado.
+    servidor.use(...cenario());
+    montar();
+    const usuario = digitador();
+
+    await screen.findByLabelText("Onde avisar");
+    expect(screen.queryByText(/Colunas marcadas como sensiveis/i)).toBeNull();
+
+    await usuario.selectOptions(screen.getByLabelText("Onde avisar"), "email");
+
+    expect(screen.getByText(/nunca aparecem/i)).toBeInTheDocument();
   });
 
   it("aceita antecedencia negativa para cobrar atraso", async () => {
@@ -150,7 +168,8 @@ describe("TabelaRegras", () => {
     await usuario.type(await screen.findByLabelText("Nova regra (dias)"), "-2");
     await usuario.click(screen.getByRole("button", { name: "Adicionar" }));
 
-    await waitFor(() => expect(corpo).toEqual({ offset_days: -2 }));
+    // `in_app` e o default do seletor — o canal vai junto sem o usuario mexer.
+    await waitFor(() => expect(corpo).toEqual({ offset_days: -2, channel: "in_app" }));
   });
 
   it("ativa e desativa uma regra sem apaga-la", async () => {

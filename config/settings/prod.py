@@ -130,6 +130,18 @@ REST_FRAMEWORK["NUM_PROXIES"] = config("NUM_PROXIES", default=1, cast=int)  # no
 # Não vaza a URL interna (que carrega ids) para sites de terceiros.
 SECURE_REFERRER_POLICY = "same-origin"
 
+# ------------------------------------------------------------------ e-mail
+
+# Em produção o default inverte: SMTP, não console.
+#
+# Herdar o console aqui seria o pior dos mundos — o envio "funcionaria", os
+# alertas passariam a SENT, o log encheria de e-mails bonitos e nenhum usuário
+# receberia nada. Uma falha que se parece com sucesso. Com SMTP, credencial
+# faltando vira erro de entrega, visível no status FAILED e no log.
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
+)
+
 # Conexões persistentes: o papel e a GUC do RLS são SET LOCAL, desfeitos no
 # COMMIT, então reaproveitar a conexão não carrega o usuário de uma request para
 # a próxima. Ver core/rls.py.

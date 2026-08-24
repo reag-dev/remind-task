@@ -372,6 +372,45 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# ---------------------------------------------------------------- e-mail
+
+# Provedor decidido na Phase 0: Resend, falando SMTP. A amarração a fornecedor
+# fica só na credencial — trocar de provedor é trocar host, usuário e senha.
+#
+# O default é o backend de CONSOLE, e isso é deliberado: sem credencial, o
+# e-mail aparece no terminal em vez de estourar. Em desenvolvimento é o
+# comportamento útil, e num deploy mal configurado é infinitamente melhor que a
+# alternativa — um SMTP que tenta conectar, trava e derruba o worker.
+#
+# ⚠️ Verificar o domínio (SPF/DKIM) no painel do Resend ANTES de confiar no
+# envio real. Sem isso a entrega falha ou cai em spam, e nada nos testes revela
+# isso: eles usam o backend `locmem`, que aceita qualquer coisa.
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = config("EMAIL_HOST", default="smtp.resend.com")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+# No Resend o usuário é a string literal "resend" e a senha é a API key.
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="resend")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+
+# Sem timeout, `smtplib` espera pelo default do sistema — que em Linux passa de
+# dois minutos. Um provedor que aceita a conexão e não responde prenderia o
+# worker nesse tempo por e-mail, e a fila inteira pararia atrás de um SMTP
+# lento. O envio precisa desistir muito antes disso.
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=10, cast=int)
+
+# Precisa ser um endereço no domínio verificado no provedor; qualquer outro é
+# recusado no envio, não na configuração.
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="alertas@localhost")
+
+# Quantas vezes tentar entregar antes de desistir, e o intervalo mínimo entre
+# tentativas. O backoff é exponencial em minutos (2, 4, 8, 16…): provedor fora
+# do ar não pode virar uma fila que se repete a cada execução do cron.
+EMAIL_MAX_ATTEMPTS = config("EMAIL_MAX_ATTEMPTS", default=5, cast=int)
+EMAIL_RETRY_BASE_MINUTES = config("EMAIL_RETRY_BASE_MINUTES", default=2, cast=int)
+
 # ---------------------------------------------------------------- cors
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
@@ -418,5 +457,15 @@ CELERY_BEAT_SCHEDULE = {
     "scan-due-records": {
         "task": "alerts.scan_due_records",
         "schedule": crontab(minute="*/15"),
+    },
+    # Entrega separada da geração: um provedor de e-mail fora do ar não pode
+    # parar a emissão dos alertas in-app, que não dependem de rede.
+    #
+    # Defasada em 5 minutos para não disputar o worker com a varredura, e por
+    # ordem natural — quando esta roda, os pendentes que a varredura acabou de
+    # criar já estão no banco.
+    "send-pending-emails": {
+        "task": "alerts.send_pending_emails",
+        "schedule": crontab(minute="5-59/15"),
     },
 }

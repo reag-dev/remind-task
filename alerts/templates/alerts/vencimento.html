@@ -1,0 +1,37 @@
+{% comment %}
+Sem `{% autoescape off %}` aqui, ao contrário da versão .txt — e a diferença é
+de segurança, não de gosto.
+
+`rotulo` e `tabela` são conteúdo digitado pelo usuário. No corpo de texto puro
+não há o que injetar; em HTML, um nome de cliente com `<script>` ou com um
+`<a href>` viraria markup no cliente de e-mail de quem recebe. O autoescape
+padrão do Django é o que impede isso, então ele fica ligado.
+
+Estilos inline, e nenhuma folha externa: cliente de e-mail descarta `<style>` no
+head com frequência, e Gmail remove seletores que não entende.
+{% endcomment %}<div style="font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #1f2430; max-width: 34rem;">
+  <p style="margin: 0 0 0.25rem; font-size: 1.125rem; font-weight: 600;">{{ rotulo }}</p>
+
+  <p style="margin: 0 0 1.25rem; color: #5b6472;">
+    {% if dias > 0 %}
+      Vence em <strong style="color: #1f2430;">{{ dias }} dia{{ dias|pluralize }}</strong>, em {{ vencimento|date:"d/m/Y" }}.
+    {% elif dias == 0 %}
+      <strong style="color: #1f2430;">Vence hoje</strong>, {{ vencimento|date:"d/m/Y" }}.
+    {% else %}
+      <strong style="color: #1f2430;">Venceu</strong> em {{ vencimento|date:"d/m/Y" }}.
+    {% endif %}
+  </p>
+
+  <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse: collapse; margin: 0 0 1.5rem;">
+    <tr>
+      <td style="padding: 0.5rem 0.875rem; background: #f4f5f7; border-radius: 6px; color: #5b6472; font-size: 0.875rem;">
+        Tabela: <strong style="color: #1f2430;">{{ tabela }}</strong>
+      </td>
+    </tr>
+  </table>
+
+  <p style="margin: 0; padding-top: 1rem; border-top: 1px solid #e4e6eb; color: #8a93a2; font-size: 0.8125rem;">
+    Você recebeu este aviso porque há uma regra de alerta por e-mail nesta tabela.
+    Para deixar de recebê-lo, desative a regra na tela de alertas da tabela.
+  </p>
+</div>

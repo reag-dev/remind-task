@@ -62,6 +62,18 @@ export default defineRailway(() => {
     // Banco 1: o 0 é do Celery. Ver a nota de CACHES em config/settings/base.py
     // — os contadores de throttle precisam ser compartilhados entre os workers.
     CACHE_URL: preserve(),
+
+    // E-mail (Phase 5). Quem ENVIA hoje é o `worker` e o `cron-alertas`; o
+    // `web` passa a enviar na Phase 10 (recuperação de senha). Ficam no bloco
+    // comum porque a credencial é a mesma e separar criaria dois lugares para
+    // rotacionar a API key e um para esquecer.
+    //
+    // ⚠️ Em produção o EMAIL_BACKEND já defaulta para SMTP (prod.py). Sem a
+    // senha, todo envio falha e o alerta acaba em FAILED — o que é melhor que
+    // o console, onde o envio "funciona" e ninguém recebe nada.
+    EMAIL_HOST_PASSWORD: preserve(),
+    // Precisa ser um endereço no domínio verificado (SPF/DKIM) no Resend.
+    DEFAULT_FROM_EMAIL: preserve(),
   };
 
   const web = service("web", {
@@ -146,7 +158,13 @@ export default defineRailway(() => {
    */
   const cron = service("cron-alertas", {
     source: github(REPO, { branch: BRANCH }),
-    start: "python manage.py scan_alerts",
+    // Os dois comandos, separados por `;` e NÃO por `&&`.
+    //
+    // Gerar alertas e entregá-los por e-mail falham por motivos diferentes — um
+    // dado estranho numa tabela versus o provedor de e-mail fora do ar. Com
+    // `&&`, uma varredura que falhasse pularia a entrega dos pendentes que já
+    // estavam na fila; com `;`, cada um responde por si.
+    start: "python manage.py scan_alerts; python manage.py send_alert_emails",
     env: comuns,
   });
 
