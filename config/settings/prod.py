@@ -1,5 +1,4 @@
 from decouple import Csv, config
-from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
 
@@ -26,21 +25,14 @@ REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (  # noqa: F405
 # ---------------------------------------------------------------- allow-lists
 
 # ALLOWED_HOSTS e CORS vêm do ambiente (base.py). Em produção, vazio não é um
-# default aceitável: sem host declarado o Django recusa tudo com 400 e ninguém
-# entende por quê; CORS vazio com CORS_ALLOW_CREDENTIALS ligado é pior ainda,
-# porque convida alguém a "resolver" com CORS_ALLOW_ALL_ORIGINS. Falhar no boot
-# é mais barato do que descobrir isso em produção.
-if not ALLOWED_HOSTS:  # noqa: F405
-    raise ImproperlyConfigured(
-        "DJANGO_ALLOWED_HOSTS é obrigatório em produção. "
-        "Se isto apareceu num processo que NÃO atende HTTP — worker do Celery, "
-        "cron, um manage.py qualquer —, a causa costuma ser esta: em plataformas "
-        "como o Railway, só o serviço com domínio público recebe "
-        "RAILWAY_PUBLIC_DOMAIN, e é ele que preenche a lista sozinho (ver "
-        "base.py). Os demais compartilham este mesmo módulo de settings e "
-        "precisam da variável declarada, mesmo sem servir requisição nenhuma. "
-        "Aponte-a para o domínio do serviço web."
-    )
+# default aceitável — mas a checagem NÃO mora aqui.
+#
+# Ela morava, e o efeito era que todo processo que carregasse este módulo a
+# executava. O Celery carrega: um worker, que não atende requisição nenhuma, se
+# recusava a subir por falta de uma lista de origens CORS. Agora as guardas de
+# superfície HTTP rodam no carregamento do WSGI — ver `config/validacao.py`,
+# que explica por que aquele é o gatilho certo.
+VALIDAR_SUPERFICIE_HTTP = True
 
 
 def _csrf_origin(host: str) -> str | None:
@@ -69,12 +61,6 @@ CSRF_TRUSTED_ORIGINS = config("CSRF_TRUSTED_ORIGINS", default="", cast=Csv()) or
     origin for origin in map(_csrf_origin, ALLOWED_HOSTS) if origin  # noqa: F405
 ]
 
-if not CORS_ALLOWED_ORIGINS:  # noqa: F405
-    raise ImproperlyConfigured(
-        "CORS_ALLOWED_ORIGINS é obrigatório em produção: o frontend está em "
-        "outra origem e nenhuma chamada da SPA passaria."
-    )
-
 # ------------------------------------------------------- cookie de refresh
 
 # A topologia decidida na Phase 0 é `*.up.railway.app` para os dois serviços.
@@ -85,22 +71,8 @@ if not CORS_ALLOWED_ORIGINS:  # noqa: F405
 # nenhum: o usuário só cairia na tela de login.
 AUTH_COOKIE_SAMESITE = config("AUTH_COOKIE_SAMESITE", default="None")
 
-_SAMESITE_VALIDOS = {"Lax", "Strict", "None"}
-if AUTH_COOKIE_SAMESITE not in _SAMESITE_VALIDOS:
-    raise ImproperlyConfigured(
-        f"AUTH_COOKIE_SAMESITE={AUTH_COOKIE_SAMESITE!r} não é válido; "
-        f"use um de {sorted(_SAMESITE_VALIDOS)}."
-    )
-
-# `None` sem `Secure` é a combinação que o browser descarta **em silêncio**: o
-# cookie não é recusado com erro, ele só nunca chega. Falhar no boot é a única
-# forma de isso não virar um bug de sessão intermitente em produção — mesmo
-# padrão que ALLOWED_HOSTS vazio, logo acima.
-if AUTH_COOKIE_SAMESITE == "None" and not AUTH_COOKIE_SECURE:  # noqa: F405
-    raise ImproperlyConfigured(
-        "AUTH_COOKIE_SAMESITE='None' exige AUTH_COOKIE_SECURE=True; sem Secure "
-        "o browser descarta o cookie sem avisar."
-    )
+# A validação do par (SameSite, Secure) está em `config/validacao.py`, junto com
+# as demais guardas de superfície HTTP.
 
 # --------------------------------------------------- superfície pública
 

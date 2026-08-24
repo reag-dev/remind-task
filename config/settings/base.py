@@ -19,6 +19,12 @@ SECRET_KEY = config("DJANGO_SECRET_KEY")
 # Superfícies que não são a API em si. Ligadas por padrão porque em
 # desenvolvimento são ferramenta de trabalho; `prod.py` inverte os dois
 # defaults — publicá-las é escolha, não consequência de subir o serviço.
+# Guardas de superfície HTTP: desligadas por padrão, `prod.py` liga.
+#
+# Em desenvolvimento, ALLOWED_HOSTS e CORS vazios são um começo legítimo, e
+# derrubar o `runserver` por causa deles só atrapalha. Ver config/validacao.py.
+VALIDAR_SUPERFICIE_HTTP = False
+
 EXPOSE_ADMIN = config("EXPOSE_ADMIN", default=True, cast=bool)
 EXPOSE_API_DOCS = config("EXPOSE_API_DOCS", default=True, cast=bool)
 DEBUG = False

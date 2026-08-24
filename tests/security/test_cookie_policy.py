@@ -40,7 +40,9 @@ def _settings(**extra: str) -> subprocess.CompletedProcess:
         [
             sys.executable,
             "-c",
-            "import json, django; django.setup();"
+            # `config.wsgi` dispara as guardas de superfície HTTP; só
+            # `django.setup()` não dispara mais nenhuma. Ver config/validacao.py.
+            "import json, config.wsgi;"
             "from django.conf import settings as s;"
             "print(json.dumps({"
             "  'AUTH_COOKIE_SAMESITE': s.AUTH_COOKIE_SAMESITE,"
