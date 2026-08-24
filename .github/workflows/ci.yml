@@ -81,6 +81,152 @@ jobs:
       - name: Testes + cobertura
         run: npm run test -- --coverage
 
+  # As imagens de PRODUÇÃO, exercitadas de verdade.
+  #
+  # Os outros jobs rodam a imagem de desenvolvimento: o compose sobrescreve
+  # `command:` em todo serviço, então nem o `docker/entrypoint.sh` nem o nginx
+  # do frontend chegam a executar. Sem este job, o caminho que efetivamente vai
+  # para o Railway é o único do repositório que ninguém nunca roda — e a
+  # primeira execução seria o primeiro deploy.
+  producao:
+    name: imagens de produção — sobem e respondem
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Preparar .env
+        run: cp .env.example .env
+
+      - name: Subir o banco
+        run: docker compose up -d --wait db
+
+      # `REQUIREMENTS=base.txt` é o ponto: a imagem de produção não leva pytest,
+      # ruff nem factory-boy. Se algum código de aplicação importar algo que só
+      # existe em dev.txt, o build ou o boot quebram aqui.
+      - name: Construir a imagem do backend
+        run: docker build --build-arg REQUIREMENTS=base.txt -t rt-api:prod .
+
+      # O entrypoint de verdade: migrate e depois `exec gunicorn` na $PORT.
+      # `--network host` para alcançar o Postgres publicado pelo compose.
+      - name: Servir com gunicorn
+        run: |
+          docker run -d --name rt-api --network host             -e PORT=8000             -e DJANGO_SECRET_KEY=ci-only-n7Qw2Kx9Lp4Zr8Vt6Ys1Bd3Fg5Hj0Mn7Pq2Rs4             -e DJANGO_ALLOWED_HOSTS=localhost             -e CORS_ALLOWED_ORIGINS=https://front.invalid             -e DATABASE_URL=postgres://remind:remind@localhost:5432/remind             rt-api:prod
+
+      # `X-Forwarded-Proto: https` não é truque de teste: é exatamente o header
+      # que o proxy do Railway injeta, e é o que `SECURE_PROXY_SSL_HEADER` lê.
+      # Sem ele o SECURE_SSL_REDIRECT responde 301 e o teste mediria o redirect
+      # em vez da aplicação.
+      - name: Esperar o health responder
+        run: |
+          for i in $(seq 1 30); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}'               -H 'X-Forwarded-Proto: https'               http://localhost:8000/api/health/ || true)
+            if [ "$codigo" = "200" ]; then
+              echo "health respondeu 200 na tentativa $i"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::gunicorn não respondeu 200 em /api/health/ (último código: $codigo)"
+          docker logs rt-api
+          exit 1
+
+      # DJANGO_SETTINGS_MODULE não é passado ao container, de propósito: o
+      # entrypoint tem que defaultar para produção sozinho. Se cair no default
+      # de dev do `os.environ.setdefault`, o serviço sobe com DEBUG=True, cookie
+      # sem Secure e sem HSTS — e nada reclama.
+      #
+      # A sonda é /proc/1/environ, e não um `docker exec python -c` qualquer: o
+      # `export` do entrypoint vive no processo que ele substituiu, e um
+      # `docker exec` cria um processo NOVO, que não o herda — foi assim que a
+      # primeira versão deste passo falhou medindo a si mesma. Ler o PID 1 prova
+      # duas coisas de uma vez: com que settings o gunicorn roda, e que ele é
+      # mesmo o PID 1 (logo o `exec` funcionou e o SIGTERM do deploy o alcança).
+      - name: O default de settings é produção, e o gunicorn é o PID 1
+        run: |
+          docker exec rt-api python -c "
+          import sys
+          bruto = open('/proc/1/environ').read().split(chr(0))
+          ambiente = dict(p.split('=', 1) for p in bruto if '=' in p)
+          comando = open('/proc/1/cmdline').read().replace(chr(0), ' ').strip()
+          modulo = ambiente.get('DJANGO_SETTINGS_MODULE', '(ausente)')
+          print('PID 1  :', comando)
+          print('settings:', modulo)
+          if modulo != 'config.settings.prod':
+              sys.exit('ERRO: o PID 1 nao esta em config.settings.prod')
+          if 'gunicorn' not in comando:
+              sys.exit('ERRO: o PID 1 nao e o gunicorn - o exec sumiu')
+          "
+
+      # A contraprova comportamental: com DEBUG=True o Django devolve a página
+      # amarela de debug, que lista a URLconf inteira para quem pedir uma rota
+      # que não existe. Em produção tem que ser um 404 seco.
+      - name: Rota inexistente não vaza a página de debug
+        run: |
+          corpo=$(curl -s -H 'X-Forwarded-Proto: https' http://localhost:8000/nao-existe-xyz/)
+          if echo "$corpo" | grep -qi 'URLconf'; then
+            echo "::error::página de debug exposta — o serviço está com DEBUG=True"
+            exit 1
+          fi
+          echo "404 sem página de debug: ok"
+
+      - name: Derrubar o backend
+        run: docker rm -f rt-api
+
+      - name: Construir a imagem do frontend
+        run: |
+          docker build -f frontend/Dockerfile --target producao             --build-arg VITE_API_URL=https://api-ci.invalid/api             -t rt-front:prod .
+
+      # A guarda do ARG. Um build sem a URL emitiria um bundle que chama
+      # `undefined/tabelas/` — passa no build, quebra no browser do usuário.
+      - name: Build sem VITE_API_URL tem que falhar
+        run: |
+          if docker build -f frontend/Dockerfile --target producao                -t rt-front:sem-url . >/dev/null 2>&1; then
+            echo "::error::o build passou sem VITE_API_URL — a guarda sumiu"
+            exit 1
+          fi
+          echo "guarda do VITE_API_URL: ok"
+
+      - name: Servir o dist com nginx
+        run: |
+          docker run -d --name rt-front -p 8080:80 rt-front:prod
+          for i in $(seq 1 15); do
+            curl -fsS http://localhost:8080/ >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+      - name: A SPA é servida
+        run: curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+
+      # O fallback. Sem `try_files ... /index.html`, recarregar uma rota do
+      # React Router dá 404 — e o bug só aparece em deep link, nunca navegando.
+      - name: Rota client-side recarregada devolve 200, não 404
+        run: |
+          for rota in /tabelas/abc /alertas /tabelas/abc/colunas; do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:8080$rota")
+            test "$codigo" = "200" || {
+              echo "::error::$rota devolveu $codigo — fallback da SPA quebrado"
+              exit 1
+            }
+          done
+
+      # A contrapartida: asset inexistente NÃO pode cair no fallback. Se cair, o
+      # browser recebe HTML com Content-Type de JavaScript e o erro que aparece
+      # é "Unexpected token '<'", que não aponta para lugar nenhum.
+      - name: Asset inexistente devolve 404, não o index
+        run: |
+          codigo=$(curl -s -o /dev/null -w '%{http_code}'             http://localhost:8080/assets/nao-existe-xyz.js)
+          test "$codigo" = "404" || {
+            echo "::error::/assets/ inexistente devolveu $codigo em vez de 404"
+            exit 1
+          }
+
+      - name: Logs (em caso de falha)
+        if: failure()
+        run: |
+          docker logs rt-api 2>&1 || true
+          docker logs rt-front 2>&1 || true
+          docker compose logs --no-color
+
   # Detector de deriva entre o schema do backend e o cliente tipado.
   #
   # `schema.d.ts` é gerado a partir do OpenAPI que o Django serve. Nada obriga

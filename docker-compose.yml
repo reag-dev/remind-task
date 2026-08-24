@@ -64,6 +64,9 @@ services:
       # Contexto na raiz para alcançar `docker/certs/` — ver frontend/Dockerfile.
       context: .
       dockerfile: frontend/Dockerfile
+      # Obrigatório: `producao` é o último estágio do arquivo, então sem esta
+      # linha o compose construiria a imagem de nginx e o HMR sumiria.
+      target: dev
     environment:
       # A URL é a do HOST, não `http://web:8000`. Quem faz as requisições é o
       # browser, que roda fora da rede do compose e não resolve o nome `web`.
