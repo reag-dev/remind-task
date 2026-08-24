@@ -21,3 +21,11 @@ psycopg[binary]>=3.2,<4.0
 python-decouple>=3.8
 drf-spectacular>=0.27,<1.0
 gunicorn>=23.0
+
+# O Railway injeta DATABASE_URL; base.py a lê como fonte primária e mantém os
+# POSTGRES_* como fallback para o compose de desenvolvimento.
+dj-database-url>=2.2,<4.0
+
+# Serve os estáticos do próprio processo do gunicorn. Sem isto, DEBUG=False
+# simplesmente não serve nada em /static/ — e o Admin fica sem CSS.
+whitenoise>=6.7,<7.0
