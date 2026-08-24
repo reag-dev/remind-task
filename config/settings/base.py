@@ -38,6 +38,21 @@ _railway_domain = config("RAILWAY_PUBLIC_DOMAIN", default="")
 if _railway_domain and _railway_domain not in ALLOWED_HOSTS:
     ALLOWED_HOSTS = [*ALLOWED_HOSTS, _railway_domain]
 
+# O healthcheck da plataforma NÃO chega pelo domínio público: ele bate no
+# container pela rede interna, e o Host que manda é este nome fixo. Sem ele na
+# lista, o Django responde 400 (DisallowedHost) ao healthcheck, o Railway marca
+# o deploy como reprovado e o domínio passa a devolver 502 — com o container de
+# pé e a aplicação saudável, que é o que torna o sintoma tão confuso.
+#
+# Só entra quando estamos mesmo no Railway. Aceitar um Host que não é nosso tem
+# custo: `request.build_absolute_uri()` passaria a montar URL apontando para
+# `healthcheck.railway.app`. Hoje nada no projeto monta URL a partir do Host —
+# mas a recuperação de senha da Phase 10 vai gerar link por e-mail, e ali o
+# endereço tem que sair de configuração, não do cabeçalho da requisição.
+RAILWAY_HEALTHCHECK_HOST = "healthcheck.railway.app"
+if _railway_domain and RAILWAY_HEALTHCHECK_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, RAILWAY_HEALTHCHECK_HOST]
+
 # ---------------------------------------------------------------- apps
 
 DJANGO_APPS = [

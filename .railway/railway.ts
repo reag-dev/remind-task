@@ -70,6 +70,17 @@ export default defineRailway(() => {
     // CMD ["/app/docker/entrypoint.sh"], que migra e faz exec do gunicorn na
     // $PORT. Repetir o comando aqui criaria um segundo lugar para esquecer de
     // atualizar — e o entrypoint é o caminho que o CI já exercita.
+    // ⚠️ O healthcheck NÃO chega pelo domínio público: a plataforma alcança o
+    // container pela rede interna, em HTTP puro e com `Host:
+    // healthcheck.railway.app`. Isso derrubou o primeiro deploy real
+    // (2026-08-24) por dois motivos ao mesmo tempo — 400 por DisallowedHost e
+    // 301 por SECURE_SSL_REDIRECT —, e deploy reprovado nunca entra em serviço:
+    // o domínio devolve 502 com o container de pé.
+    //
+    // O que faz isto funcionar hoje: o host do healthcheck entra em
+    // ALLOWED_HOSTS quando RAILWAY_PUBLIC_DOMAIN existe (base.py), e
+    // `/api/health/` está em SECURE_REDIRECT_EXEMPT (prod.py). Mexer em
+    // qualquer um dos dois traz o 502 de volta.
     healthcheck: "/api/health/",
     healthcheckTimeout: 60,
     env: {

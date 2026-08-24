@@ -7,6 +7,25 @@ DEBUG = False
 # RS06 — comunicação segura. Detalhado na Phase 7.
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# O healthcheck da plataforma é a exceção, e precisa ser exceção.
+#
+# Ele não passa pelo proxy público: bate no container pela rede interna, em HTTP
+# puro e sem `X-Forwarded-Proto`. Para o `SECURE_PROXY_SSL_HEADER` acima, isso é
+# uma requisição insegura, e o `SECURE_SSL_REDIRECT` responde 301. O Railway
+# espera 200, reprova o deploy, e o domínio devolve 502 com a aplicação
+# perfeitamente de pé.
+#
+# A saída tentadora é desligar o SECURE_SSL_REDIRECT — foi o que resolveu o
+# problema em metade dos relatos que se acha sobre isto, e é caro: derruba o
+# redirect para TODA a aplicação por causa de um endpoint. Isentar só o caminho
+# do health mantém a garantia onde ela vale.
+#
+# O padrão casa contra `request.path` SEM a barra inicial, e com `re.search` —
+# daí o `^...$`, sem o qual `api/health/` casaria dentro de outras rotas.
+# `views.health` não devolve nada que não possa trafegar em claro dentro da
+# rede da plataforma: um status e se o banco respondeu.
+SECURE_REDIRECT_EXEMPT = [r"^api/health/$"]
 SECURE_HSTS_SECONDS = 31_536_000
 SECURE_HSTS_INCLUDE_SUBDOMAINS = True
 SECURE_HSTS_PRELOAD = True
