@@ -180,7 +180,12 @@ export default defineRailway(() => {
     // dado estranho numa tabela versus o provedor de e-mail fora do ar. Com
     // `&&`, uma varredura que falhasse pularia a entrega dos pendentes que já
     // estavam na fila; com `;`, cada um responde por si.
-    start: "python manage.py scan_alerts; python manage.py send_alert_emails",
+    // ⚠️ O `sh -c` NÃO é decoração. O Railway executa o start command em
+    // **exec form** quando o serviço vem de Dockerfile: não há shell no meio,
+    // então `;`, `&&` e expansão de variável não são interpretados. Sem o
+    // invólucro, o `;` viraria mais um argumento do `manage.py` e o comando
+    // falharia com "unrecognized arguments".
+    start: 'sh -c "python manage.py scan_alerts; python manage.py send_alert_emails"',
     env: comuns,
   });
 

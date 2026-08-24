@@ -208,7 +208,7 @@ O que sobra para o painel:
 |---|---|---|
 | `cron-alertas` | Cron Schedule `*/15 * * * *` | Sem isso ele roda a varredura uma vez e nada reagenda |
 | `cron-alertas` | Restart Policy: **Never** | O cron roda de novo em 15 min; reiniciar so multiplica o mesmo erro no log |
-| `cron-alertas` | Start Command com os **dois** comandos, separados por `;` | `scan_alerts` gera os alertas e `send_alert_emails` os entrega. Com `&&`, uma varredura que falhasse pularia a entrega dos pendentes que ja estavam na fila |
+| `cron-alertas` | Start Command: `sh -c "python manage.py scan_alerts; python manage.py send_alert_emails"` | `scan_alerts` gera os alertas e `send_alert_emails` os entrega. **`sh -c` e obrigatorio**: o Railway roda o start command em *exec form*, sem shell, entao `;` e `&&` nao sao interpretados — sem o involucro o `;` vira argumento do `manage.py`. E `;` e nao `&&`, senao uma varredura que falhasse pularia a entrega dos pendentes que ja estavam na fila |
 | `web` e `frontend` | Variavel `PORT` declarada (8000 e 80) | O Railway tira a porta de destino do dominio do `EXPOSE` do Dockerfile mas injeta `PORT=8080` no container. Sem fixar, o processo sobe numa porta e o edge disca outra — e o dominio devolve 502 com a aplicacao de pe e o log limpo |
 
 Envio de e-mail (Phase 5): a aplicacao fala **SMTP puro**, sem SDK de
