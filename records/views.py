@@ -36,6 +36,15 @@ ORDERING_DESCRIPTION = (
                 description="Filtra por status, separados por vírgula. Ex.: `overdue,due_today`.",
                 enum=DueStatus.values,
             ),
+            OpenApiParameter(
+                "q",
+                description=(
+                    "Busca por substring, sem diferenciar maiúsculas, nas "
+                    "colunas de texto e e-mail da tabela. Colunas marcadas "
+                    "como sensíveis não são varridas. Combina com os demais "
+                    "filtros em E."
+                ),
+            ),
             OpenApiParameter("ordering", description=ORDERING_DESCRIPTION),
         ],
     ),
@@ -100,7 +109,7 @@ class RecordViewSet(viewsets.ModelViewSet):
         summary="Exporta a tabela em CSV (RF13)",
         description=(
             "Exporta exatamente o que a listagem devolveria: os mesmos filtros "
-            "(`?status=`, `?due_before=`…) e a mesma ordenação valem aqui. "
+            "(`?q=`, `?status=`, `?due_before=`…) e a mesma ordenação valem aqui. "
             "Colunas na ordem definida na tabela, com os rótulos como cabeçalho."
         ),
         parameters=[

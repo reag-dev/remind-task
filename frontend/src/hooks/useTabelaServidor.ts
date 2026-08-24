@@ -55,6 +55,8 @@ export type EstadoDaTabela = {
   pagina: number;
   tamanho: number;
   ordenacao: Ordenacao;
+  /** Termo de busca; string vazia = sem busca. */
+  busca: string;
   /** Status selecionados; vazio = sem filtro. */
   status: string[];
   vencendoAntesDe: string | null;
@@ -67,6 +69,7 @@ export type ConsultaDaApi = {
   page: number;
   page_size: number;
   ordering: string;
+  q?: string;
   status?: string;
   due_before?: string;
   due_after?: string;
@@ -102,6 +105,7 @@ export function useTabelaServidor() {
       pagina: Number.isInteger(pagina) && pagina > 0 ? pagina : 1,
       tamanho,
       ordenacao: { campo, descendente: params.get("desc") === "1" },
+      busca: params.get("busca") ?? "",
       status: (params.get("status") ?? "").split(",").filter(Boolean),
       vencendoAntesDe: params.get("ate"),
       vencendoDepoisDe: params.get("de"),
@@ -133,6 +137,10 @@ export function useTabelaServidor() {
             definir("ordenar", mudancas.ordenacao.campo);
             definir("desc", mudancas.ordenacao.descendente ? "1" : null);
           }
+          // `!== undefined`, e não um teste de veracidade: limpar a busca
+          // manda `""`, que é falso — um `if (mudancas.busca)` engoliria o
+          // pedido e o termo ficaria preso na URL depois de apagado do campo.
+          if (mudancas.busca !== undefined) definir("busca", mudancas.busca);
           if (mudancas.status) definir("status", mudancas.status.join(","));
           if (mudancas.vencendoAntesDe !== undefined) {
             definir("ate", mudancas.vencendoAntesDe);
@@ -176,6 +184,7 @@ export function useTabelaServidor() {
       page: estado.pagina,
       page_size: estado.tamanho,
       ordering: paraOrdering(estado.ordenacao),
+      ...(estado.busca ? { q: estado.busca } : {}),
       ...(estado.status.length > 0 ? { status: estado.status.join(",") } : {}),
       ...(estado.vencendoAntesDe ? { due_before: estado.vencendoAntesDe } : {}),
       ...(estado.vencendoDepoisDe ? { due_after: estado.vencendoDepoisDe } : {}),
@@ -200,8 +209,8 @@ export function useTabelaServidor() {
     // descarte: `const { page, page_size, ...resto }` deixa duas variáveis sem
     // uso que o lint reprova, e silenciá-las com `_` esconderia que a lista
     // precisa ser revisada quando um filtro novo entrar.
-    const { ordering, status, due_before, due_after } = consulta;
-    return { ordering, status, due_before, due_after };
+    const { ordering, q, status, due_before, due_after } = consulta;
+    return { ordering, q, status, due_before, due_after };
   }, [consulta]);
 
   return { estado, consulta, filtrosDeExportacao, alterar, ordenarPor };

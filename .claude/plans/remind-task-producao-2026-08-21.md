@@ -440,7 +440,21 @@ cd frontend && npm run test -- src/routes/TabelaRegras
 
 ---
 
-### Phase 6 — Busca nas colunas de texto
+### Phase 6 — Busca nas colunas de texto 🟢 concluída 2026-08-24
+
+> `?q=` no `RecordFilter`, `BarraBusca` com debounce de 350 ms e estado na URL.
+> Colunas `is_sensitive` e `select` ficam de fora — com teste para cada uma.
+>
+> **Medido antes de escrever:** o SQL de `data__<key>__icontains` e o de
+> `KeyTextTransform` são idênticos — o Django já usa `->>`, não `->`. A busca
+> não enxerga as aspas do JSON, então a forma simples do plano estava certa e
+> não precisou de anotação.
+>
+> **Índice: nada feito, como previsto.** `records_data_gin` usa
+> `jsonb_path_ops` e não acelera `ILIKE`; a varredura sequencial foi aceita
+> nesta fase. `pg_trgm` entra quando doer — e o gatilho de replanejamento
+> abaixo continua valendo.
+
 
 **Objective:** `?q=` na API e barra de pesquisa na tela.
 
