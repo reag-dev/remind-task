@@ -7,7 +7,20 @@
 # Por isso `$uri` e `$http_*` abaixo sobrevivem intactos: não são variáveis de
 # ambiente, são do nginx. `${PORT}` é a única que sai substituída.
 server {
+    # As DUAS linhas, e nesta ordem — não é redundância.
+    #
+    # A rede interna do Railway é IPv6, e é por ela que o edge alcança o
+    # container. Só com o `listen ${PORT}` (IPv4) não há nada no endereço que a
+    # plataforma procura: a conexão não se estabelece, o nginx não registra
+    # acesso nenhum — porque nada chega — e o domínio responde
+    # `502 Application failed to respond` com o container perfeitamente de pé.
+    #
+    # O nginx assume `ipv6only=on` num listener `[::]`, então ele NÃO cobre IPv4
+    # sozinho. Daí as duas: uma para cada pilha. (O gunicorn, em
+    # docker/entrypoint.sh, resolve o mesmo problema com um `[::]` só, porque
+    # ali o socket aceita IPv4 mapeado.)
     listen       ${PORT};
+    listen       [::]:${PORT};
     server_name  _;
 
     root  /usr/share/nginx/html;
