@@ -32,7 +32,14 @@ REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"] = (  # noqa: F405
 # é mais barato do que descobrir isso em produção.
 if not ALLOWED_HOSTS:  # noqa: F405
     raise ImproperlyConfigured(
-        "DJANGO_ALLOWED_HOSTS é obrigatório em produção."
+        "DJANGO_ALLOWED_HOSTS é obrigatório em produção. "
+        "Se isto apareceu num processo que NÃO atende HTTP — worker do Celery, "
+        "cron, um manage.py qualquer —, a causa costuma ser esta: em plataformas "
+        "como o Railway, só o serviço com domínio público recebe "
+        "RAILWAY_PUBLIC_DOMAIN, e é ele que preenche a lista sozinho (ver "
+        "base.py). Os demais compartilham este mesmo módulo de settings e "
+        "precisam da variável declarada, mesmo sem servir requisição nenhuma. "
+        "Aponte-a para o domínio do serviço web."
     )
 
 

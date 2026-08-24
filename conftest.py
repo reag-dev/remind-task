@@ -1,3 +1,5 @@
+import contextlib
+
 import pytest
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -14,12 +16,25 @@ def cache_limpo():
     requisições deixa o contador cheio para o seguinte, e a suíte passa a
     depender da ORDEM de execução — o tipo de falha que aparece só quando
     alguém acrescenta um teste no meio, e some ao rodar o arquivo sozinho.
+
+    Tolera o cache indisponível de propósito. Sendo `autouse`, a versão estrita
+    exigia Redis de pé para rodar QUALQUER teste — inclusive os que só carregam
+    settings num subprocesso e não têm cache nenhum no caminho. Isso tornou a
+    suíte inteira dependente de um serviço que a maioria dos testes não usa.
+
+    Engolir o erro aqui não esconde nada: quem depende do cache de verdade são
+    os testes de `tests/security/test_throttling.py`, e eles falham por conta
+    própria se ele não responder.
     """
     from django.core.cache import cache
 
-    cache.clear()
+    def limpar():
+        with contextlib.suppress(Exception):
+            cache.clear()
+
+    limpar()
     yield
-    cache.clear()
+    limpar()
 
 
 @pytest.fixture
