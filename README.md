@@ -217,6 +217,11 @@ servico **nao sobe sem** (`prod.py` levanta `ImproperlyConfigured` de proposito)
 - `DJANGO_SECRET_KEY`
 - `CORS_ALLOWED_ORIGINS` — origem exata do frontend, com esquema
 - `CSRF_TRUSTED_ORIGINS`
+- `DJANGO_ALLOWED_HOSTS` — **nos servicos sem dominio publico** (`worker`,
+  `cron-alertas`). Só quem tem dominio recebe `RAILWAY_PUBLIC_DOMAIN`, e e ele
+  que preenche a lista sozinho; os demais compartilham o mesmo modulo de
+  settings e nao sobem sem a variavel, mesmo sem servir HTTP nenhum.
+  `${{web.RAILWAY_PUBLIC_DOMAIN}}` serve.
 
 `DATABASE_URL`, `REDIS_URL`, `PORT` e `RAILWAY_PUBLIC_DOMAIN` vem da plataforma.
 `CACHE_URL` precisa apontar para o **banco 1** do Redis: o 0 e do Celery, e os
