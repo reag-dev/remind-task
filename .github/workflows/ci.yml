@@ -113,7 +113,7 @@ jobs:
       # `--network host` para alcançar o Postgres publicado pelo compose.
       - name: Servir com gunicorn
         run: |
-          docker run -d --name rt-api --network host             -e PORT=8000             -e DJANGO_SECRET_KEY=ci-only-n7Qw2Kx9Lp4Zr8Vt6Ys1Bd3Fg5Hj0Mn7Pq2Rs4             -e DJANGO_ALLOWED_HOSTS=localhost             -e CORS_ALLOWED_ORIGINS=https://front.invalid             -e DATABASE_URL=postgres://remind:remind@localhost:5432/remind             -e CACHE_URL=redis://localhost:6379/1             rt-api:prod
+          docker run -d --name rt-api --network host             -e PORT=8000             -e DJANGO_SECRET_KEY=ci-only-n7Qw2Kx9Lp4Zr8Vt6Ys1Bd3Fg5Hj0Mn7Pq2Rs4             -e DJANGO_ALLOWED_HOSTS=localhost             -e CORS_ALLOWED_ORIGINS=https://front.invalid             -e DATABASE_URL=postgres://remind:remind@localhost:5432/remind             -e CACHE_URL=redis://localhost:6379/1 -e RAILWAY_PUBLIC_DOMAIN=web-ci.up.railway.app rt-api:prod
 
       # `X-Forwarded-Proto: https` não é truque de teste: é exatamente o header
       # que o proxy do Railway injeta, e é o que `SECURE_PROXY_SSL_HEADER` lê.
@@ -132,6 +132,41 @@ jobs:
           echo "::error::gunicorn não respondeu 200 em /api/health/ (último código: $codigo)"
           docker logs rt-api
           exit 1
+
+      # O healthcheck da plataforma, como ele chega DE VERDADE — e é por isso
+      # que este passo não manda os dois cabeçalhos do passo acima.
+      #
+      # O Railway não bate pelo domínio público: alcança o container pela rede
+      # interna, em HTTP puro (sem `X-Forwarded-Proto`) e com `Host:
+      # healthcheck.railway.app`. Cada uma dessas duas condições, sozinha,
+      # reprovava o deploy — 400 por DisallowedHost e 301 por SECURE_SSL_REDIRECT
+      # — e deploy reprovado nunca entra em serviço: o domínio devolve 502 com o
+      # container de pé. Aconteceu no primeiro deploy real (2026-08-24), no `web`
+      # e no `frontend`, os dois únicos serviços com healthcheck declarado.
+      #
+      # O passo anterior passava porque mandava `Host: localhost` e
+      # `X-Forwarded-Proto: https`, contornando exatamente as duas condições.
+      - name: O healthcheck da plataforma passa como ele chega
+        run: |
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: healthcheck.railway.app' http://localhost:8000/api/health/)
+          if [ "$codigo" != "200" ]; then
+            echo "::error::o healthcheck interno recebeu $codigo (400=ALLOWED_HOSTS, 301=SSL redirect) — o deploy seria reprovado e o domínio responderia 502"
+            docker logs rt-api | tail -30
+            exit 1
+          fi
+          echo "healthcheck interno: 200"
+
+      # A contraprova: a isenção do redirect vale para UM caminho, não para o
+      # serviço. Desligar o SECURE_SSL_REDIRECT inteiro também faria o passo
+      # acima passar, e é o que este aqui impede.
+      - name: Fora do health, HTTP puro continua redirecionando
+        run: |
+          codigo=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/api/auth/login/)
+          if [ "$codigo" != "301" ] && [ "$codigo" != "302" ]; then
+            echo "::error::rota comum em HTTP puro devolveu $codigo em vez de redirect — o SECURE_SSL_REDIRECT foi desligado ou isentado além do health"
+            exit 1
+          fi
+          echo "SECURE_SSL_REDIRECT segue valendo fora do health: $codigo"
 
       # DJANGO_SETTINGS_MODULE não é passado ao container, de propósito: o
       # entrypoint tem que defaultar para produção sozinho. Se cair no default
@@ -214,7 +249,7 @@ jobs:
 
       - name: Servir o dist com nginx
         run: |
-          docker run -d --name rt-front -p 8080:80 rt-front:prod
+          docker run -d --name rt-front -e PORT=8080 -p 8080:8080 rt-front:prod
           for i in $(seq 1 15); do
             curl -fsS http://localhost:8080/ >/dev/null 2>&1 && break
             sleep 2

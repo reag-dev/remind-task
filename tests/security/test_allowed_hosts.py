@@ -38,6 +38,15 @@ BASE_DO_AMBIENTE = {
 # mediu a ausência. Declarada como string vazia, o ambiente vence.
 VAZIAS = {"DJANGO_ALLOWED_HOSTS": "", "RAILWAY_PUBLIC_DOMAIN": ""}
 
+# Entra na lista junto com o domínio público, e por isso aparece nas asserções
+# abaixo: é o Host com que a plataforma bate no healthcheck pela rede interna.
+# Ver tests/security/test_healthcheck_plataforma.py, que mede o porquê — aqui só
+# se mede a composição da lista.
+#
+# As asserções continuam sobre a lista INTEIRA de propósito: foi a igualdade
+# exata que denunciou este acréscimo, em vez de deixá-lo passar despercebido.
+HOST_DO_HEALTHCHECK = "healthcheck.railway.app"
+
 
 def _carregar(**extra: str) -> subprocess.CompletedProcess:
     ambiente = {**os.environ, **VAZIAS, **BASE_DO_AMBIENTE, **extra}
@@ -82,7 +91,7 @@ def test_o_dominio_da_plataforma_sozinho_ja_satisfaz():
     """
     resultado = _carregar(RAILWAY_PUBLIC_DOMAIN="web-abc.up.railway.app")
 
-    assert _hosts(resultado) == ["web-abc.up.railway.app"]
+    assert _hosts(resultado) == ["web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
 
 
 def test_a_variavel_sozinha_tambem_satisfaz():
@@ -100,7 +109,7 @@ def test_os_dois_convivem_sem_duplicar():
 
     hosts = _hosts(resultado)
 
-    assert hosts == ["api.exemplo.com", "web-abc.up.railway.app"]
+    assert hosts == ["api.exemplo.com", "web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
     assert len(hosts) == len(set(hosts))
 
 
@@ -110,7 +119,7 @@ def test_dominio_ja_declarado_nao_entra_duas_vezes():
         RAILWAY_PUBLIC_DOMAIN="web-abc.up.railway.app",
     )
 
-    assert _hosts(resultado) == ["web-abc.up.railway.app"]
+    assert _hosts(resultado) == ["web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
 
 
 def test_a_mensagem_aponta_de_onde_o_valor_deveria_vir():
