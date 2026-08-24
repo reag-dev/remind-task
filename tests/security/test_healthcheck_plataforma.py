@@ -170,20 +170,40 @@ def test_o_resto_da_aplicacao_continua_redirecionando():
     assert resposta["headers"]["Location"].startswith("https://")
 
 
-def test_o_host_do_healthcheck_so_vale_dentro_do_railway():
+def test_sem_host_configurado_o_healthcheck_nao_entra_sozinho():
     """
     Aceitar um Host que não é nosso tem custo, e o custo fica contido.
 
-    Fora do Railway — sem RAILWAY_PUBLIC_DOMAIN — o nome não entra na lista, e
-    quem mandar esse Host leva 400 como qualquer outro desconhecido.
+    A condição de entrada é ter ALGUM host configurado. A primeira versão desta
+    correção dependia de `RAILWAY_PUBLIC_DOMAIN`, e era frágil de um jeito ruim:
+    se a plataforma não injetasse essa variável, a correção não fazia nada — sem
+    erro, sem log, indistinguível de não ter sido aplicada.
+
+    O que continua garantido é o outro lado: com a lista vazia, que é o caso de
+    desenvolvimento, o nome não entra por conta própria e a lista segue vazia.
     """
-    resposta = _bater(
-        "/api/health/",
-        HOST_DO_HEALTHCHECK,
-        RAILWAY_PUBLIC_DOMAIN="",
-        DJANGO_ALLOWED_HOSTS="api.exemplo.com",
+    resultado = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import json, django;"
+            "django.setup();"
+            "from django.conf import settings as s;"
+            "print(json.dumps(list(s.ALLOWED_HOSTS)))",
+        ],
+        cwd=BASE_DIR,
+        env={
+            **os.environ,
+            "DJANGO_SETTINGS_MODULE": "config.settings.dev",
+            "DJANGO_ALLOWED_HOSTS": "",
+            "RAILWAY_PUBLIC_DOMAIN": "",
+        },
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
 
-    assert resposta["status"] == 400, (
-        "o host do healthcheck foi aceito fora do Railway, onde nada o emite"
-    )
+    assert resultado.returncode == 0, resultado.stdout + resultado.stderr
+    hosts = json.loads(resultado.stdout.strip().splitlines()[-1])
+
+    assert hosts == [], f"a lista deveria seguir vazia, veio {hosts!r}"
