@@ -2,7 +2,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router";
 
-import { atualizarRegra, criarRegra, excluirRegra, listarRegras } from "../api/alerts.ts";
+import {
+  atualizarRegra,
+  type CanalDeAlerta,
+  criarRegra,
+  excluirRegra,
+  listarRegras,
+} from "../api/alerts.ts";
 import { ApiError } from "../api/client.ts";
 import { chaves } from "../api/query.ts";
 import { atualizarTabela, obterTabela } from "../api/tables.ts";
@@ -108,6 +114,7 @@ function LimiarVisual({ tabelaId, valor }: { tabelaId: string; valor: number }) 
 function Regras({ tabelaId, regras }: { tabelaId: string; regras: RegraDeAlerta[] }) {
   const cliente = useQueryClient();
   const [novo, setNovo] = useState("");
+  const [canal, setCanal] = useState<CanalDeAlerta>("in_app");
 
   async function recarregar() {
     await Promise.all([
@@ -119,10 +126,12 @@ function Regras({ tabelaId, regras }: { tabelaId: string; regras: RegraDeAlerta[
   }
 
   const criar = useMutation({
-    mutationFn: () => criarRegra(tabelaId, { offset_days: Number(novo) }),
+    mutationFn: () => criarRegra(tabelaId, { offset_days: Number(novo), channel: canal }),
     onSuccess: async () => {
       await recarregar();
       setNovo("");
+      // O canal NÃO é resetado: quem acabou de criar uma regra de e-mail
+      // provavelmente vai criar outra. A antecedência é que muda a cada uma.
     },
   });
 
@@ -170,10 +179,32 @@ function Regras({ tabelaId, regras }: { tabelaId: string; regras: RegraDeAlerta[
           value={novo}
           onChange={(evento) => setNovo(evento.target.value)}
         />
+
+        <label htmlFor="canal-da-regra">Onde avisar</label>
+        <select
+          id="canal-da-regra"
+          value={canal}
+          onChange={(evento) => setCanal(evento.target.value as CanalDeAlerta)}
+        >
+          <option value="in_app">Na caixa de entrada</option>
+          <option value="email">Por e-mail</option>
+        </select>
+
         <button type="submit" disabled={criar.isPending || novo === ""}>
           Adicionar
         </button>
       </form>
+
+      {canal === "email" && (
+        <p className="sutil">
+          {/* O corpo do e-mail é deliberadamente magro: nome da tabela,
+              vencimento e um rótulo curto. Dizer isso aqui é o que permite ao
+              usuário decidir com informação — um e-mail sai do sistema e fica
+              na caixa de entrada de alguém para sempre. */}
+          O e-mail leva só o nome da tabela, o vencimento e um rótulo curto do
+          registro. Colunas marcadas como sensíveis nunca aparecem.
+        </p>
+      )}
 
       {erro?.status === 400 && (
         <p className="erro" role="alert">
@@ -213,6 +244,10 @@ function LinhaDeRegra({
   return (
     <li className="linha-regra">
       <span>{descrever(regra.offset_days)}</span>
+      {/* O canal precisa aparecer: a mesma antecedência pode ter uma regra de
+          cada (`alert_rules_unique` é sobre tabela + dias + canal), e sem isto
+          as duas ficariam visualmente idênticas na lista. */}
+      <span className="sutil">· {descreverCanal(regra.channel)}</span>
       {!ativa && <span className="sutil">· desativada</span>}
       <div className="acoes">
         <button
@@ -241,6 +276,10 @@ function LinhaDeRegra({
       )}
     </li>
   );
+}
+
+function descreverCanal(canal: RegraDeAlerta["channel"]): string {
+  return canal === "email" ? "por e-mail" : "na caixa de entrada";
 }
 
 function descrever(dias: number): string {

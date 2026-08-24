@@ -5,6 +5,11 @@ __pycache__/
 .env
 .env.*
 !.env.example
+# `.env.*` pegava este junto com os arquivos de verdade, e o efeito era que o
+# template de produção existia só na máquina de quem o escreveu — enquanto o
+# README apontava para ele. Ele não tem segredo nenhum: são nomes de variável e
+# a explicação de cada uma, que é justamente o que precisa estar versionado.
+!.env.prod.example
 
 # CAs locais de proxy/antivírus — específicas da máquina. Ver docker/certs/README.md
 docker/certs/*.crt

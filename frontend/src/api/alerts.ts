@@ -29,8 +29,11 @@ export function descartar(id: string): Promise<Alerta> {
 
 // ------------------------------------------------------------------ regras
 
+export type CanalDeAlerta = "in_app" | "email";
+
 export type DadosDeRegra = {
   offset_days: number;
+  channel?: CanalDeAlerta;
   is_active?: boolean;
 };
 
@@ -39,12 +42,14 @@ export function listarRegras(tabelaId: string): Promise<Pagina<RegraDeAlerta>> {
 }
 
 /**
- * `channel` não é enviado.
+ * `channel` passou a ser enviado na Phase 5.
  *
- * O modelo tem `in_app` e `email`, mas só `in_app` está implementado — a
- * entrega por e-mail está listada como fora de escopo no plano do backend.
- * Deixar o usuário escolher `email` criaria uma regra que nunca dispara nada,
- * silenciosamente. O default do modelo já é `in_app`.
+ * Antes era omitido de propósito: a entrega por e-mail não existia, e deixar o
+ * usuário escolher `email` criaria uma regra que não dispara nada, em silêncio.
+ * Agora `alerts.send_pending_emails` entrega de verdade, então a escolha
+ * corresponde a um comportamento real.
+ *
+ * Omitir continua válido — o default do modelo é `in_app`.
  */
 export function criarRegra(
   tabelaId: string,

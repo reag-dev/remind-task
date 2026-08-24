@@ -372,6 +372,52 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# ---------------------------------------------------------------- e-mail
+
+# SMTP puro, sem SDK de fornecedor. A amarração a provedor é só a credencial:
+# trocar é trocar host, porta, usuário e senha, sem tocar em código. Foi por
+# isso que a implantação pôde sair do Resend (Phase 0) para o SMTP de uma conta
+# comum sem alterar uma linha — ver `.env.prod.example`.
+#
+# Nenhum host ou usuário tem default de fornecedor aqui, de propósito. Um
+# `smtp.resend.com` embutido dá a impressão de que existe um provedor
+# configurado quando não existe: quem esquecesse `EMAIL_HOST` num serviço veria
+# conexões a um servidor com que nunca criou conta, e a mensagem de erro falaria
+# de um produto que não está em uso. Vazio é honesto — e em desenvolvimento nem
+# chega a ser lido, porque o backend default nem abre conexão.
+#
+# O default do BACKEND é o de CONSOLE, e isso é deliberado: sem credencial, o
+# e-mail aparece no terminal em vez de estourar. Em desenvolvimento é o
+# comportamento útil, e num deploy mal configurado é melhor que a alternativa —
+# um SMTP que tenta conectar, trava e prende o worker. `prod.py` inverte.
+#
+# ⚠️ Nada nos testes revela um provedor mal configurado: eles usam o backend
+# `locmem`, que aceita qualquer coisa. Só um envio real prova o transporte.
+EMAIL_BACKEND = config(
+    "EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend"
+)
+EMAIL_HOST = config("EMAIL_HOST", default="")
+EMAIL_PORT = config("EMAIL_PORT", default=587, cast=int)
+EMAIL_HOST_USER = config("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = config("EMAIL_USE_TLS", default=True, cast=bool)
+
+# Sem timeout, `smtplib` espera pelo default do sistema — que em Linux passa de
+# dois minutos. Um provedor que aceita a conexão e não responde prenderia o
+# worker nesse tempo por e-mail, e a fila inteira pararia atrás de um SMTP
+# lento. O envio precisa desistir muito antes disso.
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=10, cast=int)
+
+# Precisa ser um endereço no domínio verificado no provedor; qualquer outro é
+# recusado no envio, não na configuração.
+DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="alertas@localhost")
+
+# Quantas vezes tentar entregar antes de desistir, e o intervalo mínimo entre
+# tentativas. O backoff é exponencial em minutos (2, 4, 8, 16…): provedor fora
+# do ar não pode virar uma fila que se repete a cada execução do cron.
+EMAIL_MAX_ATTEMPTS = config("EMAIL_MAX_ATTEMPTS", default=5, cast=int)
+EMAIL_RETRY_BASE_MINUTES = config("EMAIL_RETRY_BASE_MINUTES", default=2, cast=int)
+
 # ---------------------------------------------------------------- cors
 
 CORS_ALLOWED_ORIGINS = config("CORS_ALLOWED_ORIGINS", default="", cast=Csv())
@@ -418,5 +464,15 @@ CELERY_BEAT_SCHEDULE = {
     "scan-due-records": {
         "task": "alerts.scan_due_records",
         "schedule": crontab(minute="*/15"),
+    },
+    # Entrega separada da geração: um provedor de e-mail fora do ar não pode
+    # parar a emissão dos alertas in-app, que não dependem de rede.
+    #
+    # Defasada em 5 minutos para não disputar o worker com a varredura, e por
+    # ordem natural — quando esta roda, os pendentes que a varredura acabou de
+    # criar já estão no banco.
+    "send-pending-emails": {
+        "task": "alerts.send_pending_emails",
+        "schedule": crontab(minute="5-59/15"),
     },
 }

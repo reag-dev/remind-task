@@ -120,6 +120,19 @@ class Alert(TimeStampedUUIDModel):
     notified_at = models.DateTimeField("notificado em", null=True, blank=True)
     read_at = models.DateTimeField("lido em", null=True, blank=True)
 
+    # Controle de entrega dos canais que saem do sistema (hoje só e-mail).
+    #
+    # Sem contador, "tentar de novo" não tem fim: o cron roda a cada 15 minutos,
+    # e um endereço que não existe seria retentado para sempre. Sem carimbo de
+    # tentativa, não há backoff: uma queda do provedor viraria uma rajada a cada
+    # execução, exatamente quando ele menos aguenta.
+    #
+    # `updated_at` não serve para isso, por mais tentador que seja: qualquer
+    # outra escrita no alerta o move, e o backoff passaria a depender de coisas
+    # que não são tentativa de entrega.
+    delivery_attempts = models.PositiveSmallIntegerField("tentativas de entrega", default=0)
+    last_attempt_at = models.DateTimeField("última tentativa", null=True, blank=True)
+
     class Meta:
         db_table = "alerts"
         ordering = ["-trigger_date", "-created_at"]

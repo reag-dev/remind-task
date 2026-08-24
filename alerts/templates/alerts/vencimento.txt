@@ -1,0 +1,9 @@
+{% autoescape off %}{{ rotulo }}
+{% if dias > 0 %}Vence em {{ dias }} dia{{ dias|pluralize }}, em {{ vencimento|date:"d/m/Y" }}.{% elif dias == 0 %}Vence hoje, {{ vencimento|date:"d/m/Y" }}.{% else %}Venceu em {{ vencimento|date:"d/m/Y" }}.{% endif %}
+
+Tabela: {{ tabela }}
+
+--
+Você recebeu este aviso porque há uma regra de alerta por e-mail nesta tabela.
+Para deixar de recebê-lo, desative a regra na tela de alertas da tabela.
+{% endautoescape %}

@@ -62,6 +62,34 @@ export default defineRailway(() => {
     // Banco 1: o 0 é do Celery. Ver a nota de CACHES em config/settings/base.py
     // — os contadores de throttle precisam ser compartilhados entre os workers.
     CACHE_URL: preserve(),
+
+    // E-mail (Phase 5). Quem ENVIA hoje é o `worker` e o `cron-alertas`; o
+    // `web` passa a enviar na Phase 10 (recuperação de senha). Ficam no bloco
+    // comum porque a credencial é a mesma e separar criaria dois lugares para
+    // rotacionar a API key e um para esquecer.
+    //
+    // ⚠️ Em produção o EMAIL_BACKEND já defaulta para SMTP (prod.py). Sem a
+    // senha, todo envio falha e o alerta acaba em FAILED — o que é melhor que
+    // o console, onde o envio "funciona" e ninguém recebe nada.
+    //
+    // A implantação usa SMTP do Gmail, e não o Resend que a Phase 0 escolheu.
+    // O motivo é concreto: provedor transacional exige domínio próprio
+    // verificado com SPF/DKIM, e a mesma Phase 0 decidiu ficar só em
+    // `*.up.railway.app`. Sem domínio, o Resend só entrega no endereço do dono
+    // da conta — inútil para usuário real. Uma conta de e-mail comum é um SMTP
+    // legítimo, entrega para qualquer um e não pede domínio.
+    //
+    // O código não mudou por causa disso: ele fala SMTP puro, e a amarração a
+    // fornecedor é só a credencial. Ver `.env.prod.example` para o caminho de
+    // volta a um provedor transacional.
+    EMAIL_HOST: preserve(),
+    EMAIL_PORT: preserve(),
+    EMAIL_HOST_USER: preserve(),
+    EMAIL_HOST_PASSWORD: preserve(),
+    // Precisa ser um endereço que o provedor aceite enviar em seu nome.
+    // Qualquer outro é recusado no ENVIO, não na configuração — o serviço sobe
+    // normalmente e só os e-mails falham.
+    DEFAULT_FROM_EMAIL: preserve(),
   };
 
   const web = service("web", {
@@ -146,7 +174,13 @@ export default defineRailway(() => {
    */
   const cron = service("cron-alertas", {
     source: github(REPO, { branch: BRANCH }),
-    start: "python manage.py scan_alerts",
+    // Os dois comandos, separados por `;` e NÃO por `&&`.
+    //
+    // Gerar alertas e entregá-los por e-mail falham por motivos diferentes — um
+    // dado estranho numa tabela versus o provedor de e-mail fora do ar. Com
+    // `&&`, uma varredura que falhasse pularia a entrega dos pendentes que já
+    // estavam na fila; com `;`, cada um responde por si.
+    start: "python manage.py scan_alerts; python manage.py send_alert_emails",
     env: comuns,
   });
 
