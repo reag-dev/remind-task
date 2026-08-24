@@ -10,6 +10,8 @@ type Props = {
   registros: Registro[];
   /** Há filtro ativo — muda a mensagem de lista vazia. */
   comFiltro: boolean;
+  /** Termo buscado, se houver — a mensagem de vazio o cita. */
+  busca?: string;
   ordenacao: Ordenacao;
   onOrdenar: (campo: CampoOrdenavel) => void;
   onEditar: (registro: Registro) => void;
@@ -38,6 +40,7 @@ export function GridRegistros({
   colunas,
   registros,
   comFiltro,
+  busca,
   ordenacao,
   onOrdenar,
   onEditar,
@@ -63,11 +66,16 @@ export function GridRegistros({
     // A distinção importa: "não há nada" pede criar o primeiro registro,
     // "nada casou" pede afrouxar o filtro. A mesma frase para os dois casos
     // manda o usuário para a ação errada na metade das vezes.
+    // Três mensagens, não duas: "a tabela está vazia" e "a busca não achou" são
+    // situações diferentes, e trocá-las manda o usuário para o lado errado —
+    // cadastrar um registro que já existe, ou procurar num lugar vazio.
     return (
       <p className="vazio">
-        {comFiltro
-          ? "Nenhum registro corresponde aos filtros aplicados."
-          : "Nenhum registro nesta tabela ainda."}
+        {busca
+          ? `Nenhum registro corresponde a “${busca}”.`
+          : comFiltro
+            ? "Nenhum registro corresponde aos filtros aplicados."
+            : "Nenhum registro nesta tabela ainda."}
       </p>
     );
   }

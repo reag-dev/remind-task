@@ -11,6 +11,14 @@ import type { DadosDoRegistro, Registro } from "./tipos.ts";
  */
 export type ConsultaDeRegistros = {
   page?: number;
+  /**
+   * Busca por substring, sem diferenciar maiúsculas.
+   *
+   * O backend varre apenas as colunas de texto e e-mail da tabela, e **pula as
+   * marcadas como sensíveis** — ver `RecordFilter.filter_search`. A UI não
+   * precisa saber quais são: quem decide é quem tem o modelo.
+   */
+  q?: string;
   /** Um ou mais status separados por vírgula. */
   status?: string;
   due_before?: string;

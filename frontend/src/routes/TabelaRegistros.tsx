@@ -10,6 +10,7 @@ import type { Registro } from "../api/tipos.ts";
 import { BotaoExportar } from "../components/BotaoExportar.tsx";
 import { DialogoConfirmar } from "../components/DialogoConfirmar.tsx";
 import { FormularioRegistro } from "../components/FormularioRegistro.tsx";
+import { BarraBusca } from "../components/BarraBusca.tsx";
 import { FiltroStatus } from "../components/FiltroStatus.tsx";
 import { GridRegistros } from "../components/GridRegistros.tsx";
 import { Paginacao } from "../components/Paginacao.tsx";
@@ -142,6 +143,11 @@ export function TabelaRegistros() {
             />
           )}
 
+          <BarraBusca
+            valor={estado.busca}
+            onBuscar={(busca) => alterar({ busca })}
+          />
+
           <FiltroStatus
             selecionados={estado.status}
             ate={estado.vencendoAntesDe}
@@ -156,10 +162,12 @@ export function TabelaRegistros() {
             colunas={colunas}
             registros={registros.data.results}
             comFiltro={
+              estado.busca !== "" ||
               estado.status.length > 0 ||
               estado.vencendoAntesDe !== null ||
               estado.vencendoDepoisDe !== null
             }
+            busca={estado.busca}
             ordenacao={estado.ordenacao}
             onOrdenar={ordenarPor}
             onEditar={abrirEdicao}

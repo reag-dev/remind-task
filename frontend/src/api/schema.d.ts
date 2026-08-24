@@ -381,7 +381,7 @@ export interface paths {
     };
     /**
      * Exporta a tabela em CSV (RF13)
-     * @description Exporta exatamente o que a listagem devolveria: os mesmos filtros (`?status=`, `?due_before=`…) e a mesma ordenação valem aqui. Colunas na ordem definida na tabela, com os rótulos como cabeçalho.
+     * @description Exporta exatamente o que a listagem devolveria: os mesmos filtros (`?q=`, `?status=`, `?due_before=`…) e a mesma ordenação valem aqui. Colunas na ordem definida na tabela, com os rótulos como cabeçalho.
      */
     get: operations["tables_records_export_retrieve"];
     put?: never;
@@ -1561,6 +1561,8 @@ export interface operations {
         page?: number;
         /** @description Número de resultados a serem retornados por página. */
         page_size?: number;
+        /** @description Busca por substring, sem diferenciar maiúsculas, nas colunas de texto e e-mail da tabela. Colunas marcadas como sensíveis não são varridas. Combina com os demais filtros em E. */
+        q?: string;
         /** @description Filtra por status, separados por vírgula. Ex.: `overdue,due_today`. */
         status?: "due_soon" | "due_today" | "no_due" | "on_track" | "overdue";
       };

@@ -33,6 +33,12 @@ function Sonda() {
       <button type="button" onClick={() => alterar({ status: [] })}>
         limpar status
       </button>
+      <button type="button" onClick={() => alterar({ busca: "aurora" })}>
+        buscar aurora
+      </button>
+      <button type="button" onClick={() => alterar({ busca: "" })}>
+        limpar busca
+      </button>
       <button type="button" onClick={() => alterar({ pagina: 3 })}>
         ir para pagina 3
       </button>
@@ -242,6 +248,57 @@ describe("useTabelaServidor", () => {
   });
 });
 
+describe("busca", () => {
+  it("le o termo da URL — F5 e link compartilhado preservam a busca", () => {
+    montar("/?busca=aurora");
+
+    expect(estado()).toMatchObject({ busca: "aurora" });
+    expect(consulta()).toMatchObject({ q: "aurora" });
+  });
+
+  it("sem termo, nao manda `q` — o backend nao recebe filtro vazio", () => {
+    montar("/");
+
+    expect(estado()).toMatchObject({ busca: "" });
+    expect(consulta()).not.toHaveProperty("q");
+  });
+
+  it("buscar volta para a pagina 1", async () => {
+    const usuario = digitador();
+    montar("/?pagina=4");
+
+    await usuario.click(screen.getByRole("button", { name: "buscar aurora" }));
+
+    // Mesma armadilha dos demais filtros: manter `pagina=4` deixaria o usuario
+    // numa pagina que o resultado novo pode nao ter, e o 404 do backend
+    // apareceria como "nao encontrado" para uma busca que tem resultado.
+    expect(estado()).toMatchObject({ pagina: 1, busca: "aurora" });
+    expect(screen.getByTestId("url").textContent).not.toContain("pagina=4");
+  });
+
+  it("apagar o termo tira o parametro da URL, em vez de deixa-lo preso", async () => {
+    const usuario = digitador();
+    montar("/?busca=aurora");
+
+    await usuario.click(screen.getByRole("button", { name: "limpar busca" }));
+
+    // O `alterar` testa `!== undefined`, e nao veracidade: string vazia e
+    // falsa, e um `if (mudancas.busca)` engoliria o pedido de limpeza — o
+    // campo ficaria vazio na tela com a busca ainda ativa na URL.
+    expect(screen.getByTestId("url").textContent).not.toContain("busca");
+    expect(estado()).toMatchObject({ busca: "" });
+  });
+
+  it("buscar NAO descarta o filtro de status ativo", async () => {
+    const usuario = digitador();
+    montar("/?status=overdue");
+
+    await usuario.click(screen.getByRole("button", { name: "buscar aurora" }));
+
+    expect(consulta()).toMatchObject({ q: "aurora", status: "overdue" });
+  });
+});
+
 describe("filtrosDeExportacao", () => {
   it("carrega os mesmos filtros da listagem, sem paginacao", () => {
     montar(
@@ -252,10 +309,19 @@ describe("filtrosDeExportacao", () => {
     // independentes divergiriam no dia em que um filtro novo entrasse so numa.
     expect(exportacao()).toEqual({
       ordering: "-due_date,created_at",
+      q: undefined,
       status: "overdue",
       due_before: "2026-12-31",
       due_after: undefined,
     });
+  });
+
+  it("leva a busca junto — o CSV sai igual a lista na tela", () => {
+    montar("/?busca=aurora&status=overdue");
+
+    // RS08 de novo, no filtro mais novo: quem ve 3 linhas na tela e exporta
+    // esperando 3 linhas nao pode receber a tabela inteira.
+    expect(exportacao()).toMatchObject({ q: "aurora", status: "overdue" });
   });
 
   it("nao leva page nem page_size", () => {
