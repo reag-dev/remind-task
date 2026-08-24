@@ -70,17 +70,35 @@ export default defineRailway(() => {
     // CMD ["/app/docker/entrypoint.sh"], que migra e faz exec do gunicorn na
     // $PORT. Repetir o comando aqui criaria um segundo lugar para esquecer de
     // atualizar — e o entrypoint é o caminho que o CI já exercita.
-    // ⚠️ O healthcheck NÃO chega pelo domínio público: a plataforma alcança o
-    // container pela rede interna, em HTTP puro e com `Host:
-    // healthcheck.railway.app`. Isso derrubou o primeiro deploy real
-    // (2026-08-24) por dois motivos ao mesmo tempo — 400 por DisallowedHost e
-    // 301 por SECURE_SSL_REDIRECT —, e deploy reprovado nunca entra em serviço:
-    // o domínio devolve 502 com o container de pé.
+    // ⚠️ PORT fixado, e é ISTO que fazia os 502 do primeiro deploy real.
     //
-    // O que faz isto funcionar hoje: o host do healthcheck entra em
-    // ALLOWED_HOSTS quando RAILWAY_PUBLIC_DOMAIN existe (base.py), e
-    // `/api/health/` está em SECURE_REDIRECT_EXEMPT (prod.py). Mexer em
-    // qualquer um dos dois traz o 502 de volta.
+    // O Railway define a porta de destino do domínio a partir do `EXPOSE` do
+    // Dockerfile (8000 aqui), mas injeta `PORT=8080` dentro do container. O
+    // entrypoint obedece a `$PORT` e sobe na 8080; o edge disca a 8000. Ninguém
+    // se encontra, e o domínio devolve `502 Application failed to respond`.
+    //
+    // O sintoma não tinha pista: a aplicação subia perfeitamente e o log ficava
+    // LIMPO — a conexão morria antes de virar requisição. Só o log de rede
+    // (`railway logs --network`) mostrava o edge discando uma porta e o
+    // processo escutando em outra.
+    //
+    // Declarar PORT tira a contradição: é a variável que a plataforma respeita
+    // para a porta de destino, e é a mesma que o entrypoint lê. Mudar este
+    // número exige mudar o `EXPOSE` do Dockerfile junto.
+    PORT: "8000",
+
+    // O healthcheck NÃO chega pelo domínio público: a plataforma alcança o
+    // container pela rede interna, em HTTP puro e com `Host:
+    // healthcheck.railway.app`. Sem preparo, as duas coisas reprovam o deploy —
+    // 400 por DisallowedHost e 301 por SECURE_SSL_REDIRECT.
+    //
+    // Isso NÃO foi a causa dos 502 de 2026-08-24 (não havia healthcheck
+    // configurado no painel; a causa foi a porta, acima). Mas passa a valer no
+    // momento em que este arquivo for aplicado e o healthcheck existir de fato.
+    //
+    // O que o torna viável: o host do healthcheck entra em ALLOWED_HOSTS quando
+    // há algum host configurado (base.py), e `/api/health/` está em
+    // SECURE_REDIRECT_EXEMPT (prod.py).
     healthcheck: "/api/health/",
     healthcheckTimeout: 60,
     env: {
@@ -149,6 +167,12 @@ export default defineRailway(() => {
     source: github(REPO, { branch: BRANCH }),
     healthcheck: "/",
     env: {
+      // Mesma armadilha do `web`, com outro número: o Railway tira a porta de
+      // destino do `EXPOSE 80` da imagem de nginx e injeta `PORT=8080` no
+      // container. O template do nginx escuta em `${PORT}` — ou seja, na 8080 —
+      // enquanto o edge disca a 80. Fixar aqui alinha os dois.
+      PORT: "80",
+
       // Caminho do Dockerfile por variável — é o mecanismo que o Railway
       // documenta para arquivo fora da raiz.
       RAILWAY_DOCKERFILE_PATH: "frontend/Dockerfile",
