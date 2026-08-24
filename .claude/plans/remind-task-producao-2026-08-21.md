@@ -328,7 +328,33 @@ docker rm -f rt-front
 
 ---
 
-### Phase 3 — Serviços no Railway
+### Phase 3 — Serviços no Railway 🟡 preparada 2026-08-24 — falta provisionar
+
+> Tudo o que é código está pronto e mesclado: `.railway/railway.ts`,
+> `.env.prod.example`, o comando `preflight_db`, o `scan_alerts` do cron e a
+> seção "Deploy no Railway" do README. **O que falta exige a conta:** criar o
+> projeto, provisionar Postgres e Redis, definir os segredos e deployar.
+>
+> **Duas coisas que este plano dizia e estavam erradas:**
+>
+> 1. **`railway.toml` está descontinuado.** O Railway para de lê-lo em
+>    2026-12-01 — três meses a partir de hoje. O substituto é Infrastructure as
+>    Code (`.railway/railway.ts`). Foi a instrução deste próprio plano de
+>    "confirmar contra a documentação vigente" que evitou o arquivo natimorto.
+> 2. **`citext` e `pgcrypto` não são risco, porque não são usadas.** O e-mail
+>    case-insensitive virou collation **ICU** quando o Django 5.1 removeu
+>    `CIEmailField` (`accounts/models.py:18`), e os UUIDs vêm de `uuid.uuid4`
+>    (`core/models.py:15`). O `init.sql` as cria por inércia. O risco real de
+>    collation é o ICU, que é outra pergunta — e o `preflight_db` faz essa.
+>
+> **O risco do `CREATE ROLE` continua de pé e não foi resolvido — foi tornado
+> mensurável.** `preflight_db` responde contra o banco real, sem deixar nada
+> para trás, e sai com código != 0 para servir de gate antes do `migrate`.
+>
+> Nem tudo coube no IaC: `cronSchedule` e `restartPolicyType` não estão
+> documentados para ele, só para o formato deprecado, então ficaram como ajuste
+> de painel em vez de config não confirmada que falha na aplicação.
+
 
 **Objective:** o projeto no ar.
 
@@ -716,9 +742,11 @@ infra, desde que a Phase 5 espere a decisão de provedor da Phase 0.
   a camada de queryset. Descobrir isso **na Phase 3, antes de migrar dados** —
   a alternativa é papel criado pelo suporte da plataforma ou outro provedor de
   banco.
-- **`citext`/`pgcrypto` indisponíveis no Postgres gerenciado** → o e-mail
-  case-insensitive por collation não sobe; a alternativa é normalizar na
-  aplicação, o que é mais fraco e precisa de teste próprio.
+- ~~**`citext`/`pgcrypto` indisponíveis no Postgres gerenciado**~~ → **premissa
+  falsa, verificada em 2026-08-24.** Nenhuma das duas é usada. O gatilho certo é
+  **ICU indisponível**, que derruba `accounts.0001` (a collation
+  `und-u-ks-level2` de `users.email`); a alternativa continua sendo normalizar na
+  aplicação, mais fraca e com teste próprio. `preflight_db` checa isso.
 - **A busca da Phase 6 ficar lenta** (varredura sequencial em tabela grande) →
   entra `pg_trgm` com índice de expressão. Medir antes: a maioria das tabelas
   não chega ao tamanho em que isso importa.

@@ -159,6 +159,89 @@ espelhando o `fail_under` do backend.
 
 ---
 
+## Deploy no Railway
+
+A topologia esta versionada em [`.railway/railway.ts`](.railway/railway.ts) —
+**Infrastructure as Code**, e nao `railway.toml`: o Config as Code foi
+descontinuado e o Railway para de le-lo em **2026-12-01**.
+
+Seis recursos: `postgres` e `redis` gerenciados, mais `web` (gunicorn),
+`worker` (Celery), `cron-alertas` e `frontend` (nginx).
+
+### 1. Antes de qualquer migrate — o preflight
+
+```bash
+railway run --service web python manage.py preflight_db
+```
+
+**Nao pule.** A migration `core/0001_rls_policies` executa `CREATE ROLE`. Se o
+banco nao permitir, ela falha **no meio** da sequencia e deixa o schema pela
+metade — bem pior do que nao ter comecado. O comando responde antes, contra o
+banco de verdade, sem deixar nada para tras (tudo em transacao com ROLLBACK), e
+sai com codigo != 0 se reprovar, entao serve de gate:
+
+```bash
+railway run --service web python manage.py preflight_db &&   railway run --service web python manage.py migrate
+```
+
+Ele checa versao do Postgres, ICU, `CREATE ROLE`, `GRANT`/`SET ROLE` e RLS com
+GUC personalizada.
+
+> **Correcao ao plano:** a Phase 3 listava `citext` e `pgcrypto` como risco.
+> Medido: **nenhuma das duas e usada**. O e-mail case-insensitive virou collation
+> ICU quando o Django 5.1 removeu `CIEmailField`, e os UUIDs vem de `uuid.uuid4`
+> em Python. O `docker/postgres/init.sql` as cria por inercia. O risco real de
+> collation e **ICU**, que e outra pergunta — e o preflight faz essa.
+
+### 2. Ajustes que precisam do painel
+
+A referencia de IaC documenta, para `service()`, apenas `source`, `build`
+(string), `start`, `healthcheck`, `healthcheckTimeout`, `replicas`, `env`,
+`volumeMounts` e `domains`. Campos como `cronSchedule` e `restartPolicyType`
+aparecem so na referencia do formato deprecado, entao **nao** foram escritos no
+arquivo — config nao confirmada daria um arquivo que parece completo e falha na
+aplicacao, ou e aceita e ignorada em silencio.
+
+O que sobra para o painel:
+
+| Servico | Ajuste | Por que |
+|---|---|---|
+| `cron-alertas` | Cron Schedule `*/15 * * * *` | Sem isso ele roda a varredura uma vez e nada reagenda |
+| `cron-alertas` | Restart Policy: **Never** | O cron roda de novo em 15 min; reiniciar so multiplica o mesmo erro no log |
+
+### 3. Variaveis
+
+A lista completa esta em [`.env.prod.example`](.env.prod.example). As que o
+servico **nao sobe sem** (`prod.py` levanta `ImproperlyConfigured` de proposito):
+
+- `DJANGO_SECRET_KEY`
+- `CORS_ALLOWED_ORIGINS` — origem exata do frontend, com esquema
+- `CSRF_TRUSTED_ORIGINS`
+
+`DATABASE_URL`, `REDIS_URL`, `PORT` e `RAILWAY_PUBLIC_DOMAIN` vem da plataforma.
+`CACHE_URL` precisa apontar para o **banco 1** do Redis: o 0 e do Celery, e os
+contadores de throttle precisam ser compartilhados entre os workers.
+
+### 4. O teste que so o primeiro deploy faz
+
+A Phase 0 escolheu `*.up.railway.app` para os dois servicos. Como `up.railway.app`
+esta na Public Suffix List, `web-xxxx` e `frontend-yyyy` sao **registrable
+domains diferentes** — o cookie de refresh so atravessa com `SameSite=None;
+Secure`, que `prod.py` ja exige no boot.
+
+O modo de falha e silencioso: sem erro, sem log, a sessao so morre a cada 15
+minutos e o usuario cai no login. Entao o roteiro de aceite e:
+
+1. Logar na SPA.
+2. Esperar o access token expirar (15 minutos).
+3. Navegar.
+4. **Continuar logado.**
+
+Nenhum teste automatizado pega isso, porque o servidor de teste nao e um browser
+e aceita o cookie normalmente.
+
+---
+
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo push para
