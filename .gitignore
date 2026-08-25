@@ -42,3 +42,8 @@ node_modules/
 frontend/dist/
 frontend/coverage/
 frontend/*.tsbuildinfo
+
+# Dumps do banco. Ficam fora do repo por dois motivos: são dados reais de
+# usuário (RS05 não para na fronteira do git) e crescem sem teto. O que precisa
+# ser versionado é o SCRIPT que os gera — `docker/backup.sh`.
+backups/

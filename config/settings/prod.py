@@ -147,3 +147,37 @@ EMAIL_BACKEND = config(
 # a próxima. Ver core/rls.py.
 DATABASES["default"]["CONN_MAX_AGE"] = 60  # noqa: F405
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True  # noqa: F405
+
+# ------------------------------------------------- rastreamento de erro
+
+# Sem DSN, nada é inicializado — e é assim que o desenvolvimento e o CI rodam.
+# A ausência é o default de propósito: um SDK de APM ligado por acidente num
+# ambiente de teste manda dado de verdade para um projeto de mentira.
+SENTRY_DSN = config("SENTRY_DSN", default="")
+
+if SENTRY_DSN:
+    import sentry_sdk
+
+    from core.observabilidade import opcoes_do_sentry
+
+    # As opções moram em `core/observabilidade.py`, e não soltas aqui dentro,
+    # porque ninguém consegue afirmar nada sobre uma chamada — só sobre um
+    # valor. Lá elas são um dicionário, e
+    # `tests/security/test_observability_redaction.py` verifica cada invariante:
+    # PII desligado, corpo de requisição nunca coletado, e o mesmo `scrub` do
+    # RedactingFilter aplicado no `before_send`.
+    #
+    # Importar `core.observabilidade` daqui é seguro: ele só puxa `core.logging`,
+    # que é stdlib pura. Nada de model, nada que dependa do registry de apps —
+    # que ainda não existe no momento em que este módulo é lido.
+    sentry_sdk.init(
+        **opcoes_do_sentry(
+            SENTRY_DSN,
+            # O Railway injeta o nome do ambiente; sem ele, o rótulo honesto.
+            config(
+                "SENTRY_ENVIRONMENT",
+                default=config("RAILWAY_ENVIRONMENT_NAME", default="producao"),
+            ),
+            config("SENTRY_TRACES_SAMPLE_RATE", default=0.0, cast=float),
+        )
+    )

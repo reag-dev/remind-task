@@ -457,6 +457,17 @@ curl -fsS -o /dev/null -w '%{http_code}\n' https://<dominio-front>/tabelas/abc  
 >    (`core/throttling.py`), para uma queda do Redis não virar 500 em toda
 >    requisição. Sem isso a phase ampliaria a indisponibilidade que ela existe
 >    para reduzir.
+>
+> **Correção posterior (2026-08-25, achada rodando a suíte da Phase 7).**
+> `test_anonimo_leva_429_ao_passar_do_limite` era **flaky**: o contador anônimo
+> é por IP, e o healthcheck do `docker-compose` bate em `/api/health/` a cada
+> 10s a partir do mesmo `127.0.0.1`, no processo do runserver, incrementando a
+> mesma chave no mesmo Redis. Quando o healthcheck caía dentro da janela do
+> teste, a terceira requisição já voltava 429. Medido: falha reproduzível com o
+> healthcheck ligado, 7/7 verdes com ele desligado. A correção é o teste passar
+> um `REMOTE_ADDR` só dele — 3/3 verdes com o healthcheck de volta. O CI corria
+> o mesmo risco: `up -d --wait web` deixa o healthcheck ativo durante o
+> `pytest --cov`.
 
 
 **Objective:** fechar o que só aparece sob tráfego real.
@@ -616,29 +627,59 @@ cd frontend && npm run typecheck && npm run lint
 
 ---
 
-### Phase 7 — Builds reproduzíveis
+### Phase 7 — Builds reproduzíveis 🟢 concluída 2026-08-25
 
 **Objective:** a mesma imagem, construída em datas diferentes, instala as mesmas
 versões.
 
 `pip-compile` gerando `requirements/*.lock` com hashes; `Dockerfile` instala do
-`.lock`; job de CI que falha se o lock estiver dessincronizado — mesmo princípio
-do job `contrato`, que já guarda a fronteira schema↔cliente.
+`.lock` com `--require-hashes`; passo de CI que falha se o lock estiver
+dessincronizado — mesmo princípio do job `contrato`, que já guarda a fronteira
+schema↔cliente.
 
 **Files Touched:**
 `requirements/base.lock` (novo) · `requirements/dev.lock` (novo) ·
-`requirements/base.txt` · `Dockerfile` · `.github/workflows/ci.yml`
+`requirements/base.txt` · `requirements/dev.txt` · `Dockerfile` · `Makefile` ·
+`.github/workflows/ci.yml` · `README.md`
+
+**O check compara PINS, não hashes — e isso foi medido, não presumido.** A
+primeira versão recompilava com `--generate-hashes` e comparava o arquivo
+inteiro. Custo real: `--generate-hashes` **baixa todo artefato resolvido** para
+calcular o hash — **~4 minutos**, e nesta máquina o passo terminou em
+`ReadTimeoutError` de `files.pythonhosted.org` **duas vezes seguidas**, com os
+locks perfeitamente em dia. Um check que reprova PR correto por timeout de
+download é pior que não ter check: ensina a ignorar o vermelho.
+
+Sem hashes, a mesma recompilação leva **~11 s** e responde a pergunta que
+importa — "o lock reflete o `.txt`?" —, porque isso está nos pins
+(`nome==versão`, transitivas incluídas). A integridade dos artefatos continua
+cobrada onde tem efeito: o `pip install --require-hashes` do `Dockerfile` recusa
+qualquer artefato que não case com o hash declarado, no build.
+
+A receita mora no `Makefile` (`make locks` / `make locks-check`); o CI **chama o
+alvo** em vez de repetir o comando no workflow. Duas cópias do mesmo script
+divergem em silêncio, e a que decide o merge seria justamente a que ninguém roda
+na máquina.
 
 **Verify:**
 ```bash
-docker compose exec -T web pip-compile --generate-hashes -o /tmp/check.lock requirements/base.txt
-diff <(grep -v '^#' requirements/base.lock) <(grep -v '^#' /tmp/check.lock) && echo "lock em dia"
-docker compose build web && docker compose exec -T web pytest -q
+make locks-check                       # ~11 s; "locks em dia"
+docker compose build web               # dev.lock, --require-hashes
+docker build --build-arg REQUIREMENTS=base.lock -t rt-api:prod .
+docker compose exec -T web pytest -q
 ```
+
+Testado também o caminho negativo: `requests>=2.32` acrescentado ao `base.txt`
+sem regenerar o lock → `locks-check` sai com 1 e imprime o diff, com
+`requests==2.34.2` e `urllib3==2.7.0` (a transitiva) faltando no lock.
+
+**Não coberto, de olho aberto:** a tag `python:3.12-slim` e os pacotes `apt` do
+`Dockerfile` continuam móveis. Pinar a imagem base por digest custaria nunca
+receber correção de segurança sem alguém lembrar de bumpar.
 
 ---
 
-### Phase 8 — Backup e restore
+### Phase 8 — Backup e restore 🟢 concluída 2026-08-25
 
 **Objective:** provar o **restore**, não só agendar o dump. Backup não testado é
 suposição.
@@ -648,42 +689,172 @@ dentro do fornecedor não protege contra apagar a conta ou o serviço. Dump
 próprio, com retenção, e um restore exercitado.
 
 **Files Touched:**
-`docker/backup.sh` (novo) · `Makefile` · `README.md`
+`docker/backup.sh` (novo) · `docker/restore.sh` (novo) · `Makefile` ·
+`README.md` · `.gitignore`
+
+> **A suposição era falsa, e o ensaio pegou.** Restaurando o dump direto num
+> cluster limpo:
+>
+> ```
+> ERROR:  role "remind_app" does not exist
+> ```
+>
+> `pg_dump` de um BANCO não carrega objetos de CLUSTER. O dump traz os
+> `GRANT ... TO remind_app` (são do banco), mas não o `CREATE ROLE` nem o
+> `GRANT remind_app TO <dono>` — e o restore aborta na seção de privilégios
+> **depois** de já ter carregado tabelas e dados. Medido nesse estado:
+> `records=5`, `users=3`, **`grants para remind_app = 0`**.
+>
+> O banco parece restaurado e a aplicação não lê uma linha: quem executa
+> consulta de usuário é `remind_app` (RS01), e ele ficou sem privilégio nenhum.
+> Sem `ON_ERROR_STOP=1`, o `psql` teria saído com status 0 — um restore
+> "bem-sucedido" que só falha quando alguém tenta usar o sistema.
+>
+> `docker/restore.sh` cria o papel ANTES de carregar, com o mesmo DDL da
+> migration `core/0001_rls_policies`. Depois disso: 20 tabelas, 5 policies,
+> 80 grants, 3 users, 3 tables, 5 records, rc=0.
+
+**Duas decisões de desenho que vieram disso:**
+
+1. **`make restore-ensaio` é o alvo central**, não um extra. Sobe um Postgres
+   descartável, restaura o backup mais recente, conta o que voltou e destrói o
+   cluster — sem encostar no banco local. É o único jeito de o restore continuar
+   provado depois de hoje. O ensaio sobe o cluster **sem** o `init.sql` das
+   extensões de propósito: `citext` e `pgcrypto` têm que vir do dump.
+2. **O dono do banco é lido do próprio arquivo** (`ALTER DEFAULT PRIVILEGES FOR
+   ROLE ...`), não do `.env`. No cenário que o ensaio simula — o fornecedor
+   sumiu — o dump é tudo o que restou.
 
 **Verify:**
 ```bash
-make backup
-make restore BACKUP=$(ls -t backups/*.sql.gz | head -1)
-docker compose exec -T web python manage.py shell -c \
-  "from records.models import Record; print('registros:', Record.objects.count())"
+sh docker/backup.sh                                  # ✅ 15 kB, marcador final conferido
+sh docker/restore.sh --ensaio                        # ✅ rc=0, contagens acima
+sh docker/restore.sh backups/x.sql.gz                # ✅ recusa sem CONFIRMA=sim
+CONFIRMA=sim DATABASE_URL=... sh docker/restore.sh   # ✅ recusa alvo remoto
+CONFIRMA=sim make restore BACKUP=backups/x.sql.gz    # ✅ 8 → 5 registros, rc=0
 ```
+
+**O caminho destrutivo, exercitado (2026-08-25).** Com marcador plantado para o
+restore não poder passar por no-op: 3 linhas inseridas em `records` (5 → 8),
+restore do backup anterior, e **8 → 5** de volta. `rc=0`.
+
+E a prova que importa não é a contagem, é a aplicação funcionar depois — os
+grants do `remind_app` são o que o restore ingênuo perdia:
+
+```
+login: ok
+tables: 1 — ['Contratos']
+registros da tabela: 3 lidos sob RLS pelo papel remind_app
+alertas: 2
+```
+
+(3 e não 5 porque a leitura é do usuário demo — a RLS isolando, como deve.)
+
+Único ajuste que a execução revelou: o `GRANT` de membership imprimia
+`NOTICE: role "remind" has already been granted membership...` num banco que já
+tinha o papel. Inofensivo e ruidoso — e ruído num script de desastre é pior que
+ruído, porque quem lê a saída às três da manhã não deveria precisar decidir se
+aquilo era um erro. `SET client_min_messages = warning` resolveu; restore e
+ensaio rodados de novo, os dois limpos.
 
 ---
 
-### Phase 9 — Observabilidade e CD
+### Phase 9 — Observabilidade e CD 🟢 concluída 2026-08-25
 
 **Objective:** saber que quebrou antes do usuário contar.
 
-- Health check cobre **Redis** além do Postgres: hoje o broker pode estar fora e
-  o health responde 200. Separar *liveness* de *readiness*.
-- Rastreamento de erro com o mesmo escrúpulo do `RedactingFilter`:
-  `send_default_pii=False`, e o `data` dos registros nunca no payload. Um APM que
-  capture o corpo da requisição desfaz o RS05.
-- CI publica no push para `main`.
-
 **Files Touched:**
-`core/views.py` · `core/urls.py` · `config/settings/prod.py` ·
-`requirements/base.txt` · `.github/workflows/ci.yml` ·
-`tests/security/test_observability_redaction.py` (novo)
+`core/views.py` · `core/urls.py` · `core/observabilidade.py` (novo) ·
+`config/settings/prod.py` · `requirements/base.txt` + os dois `.lock` ·
+`.github/workflows/ci.yml` · `.env.example` · `.env.prod.example` ·
+`README.md` · `core/tests/test_health.py` ·
+`tests/security/test_observability_redaction.py` (novo) ·
+`tests/security/test_throttling.py` · `tests/security/test_auth_required.py`
+
+> **O health estava sujeito ao limite de taxa, e ninguém tinha ligado os
+> pontos.** Os endpoints são `AllowAny`, então caíam no teto `anon` — 60/hour.
+> Um monitor batendo a cada 10s faz 360/hour: a partir do 61º a plataforma e o
+> painel recebem **429**, e a leitura disso é "a aplicação caiu" com ela
+> perfeitamente de pé. O sintoma já estava no log do compose desde a Phase 4 —
+> `Too Many Requests: /api/health/`, vindo do healthcheck do próprio container —
+> e foi lido como ruído até virar a falha flaky da Phase 8. Agora os dois
+> endpoints de observação são isentos, com teste.
+>
+> Efeito colateral: `test_anonimo_leva_429_ao_passar_do_limite` usava o health
+> como sonda e virou tautologia. A sonda passou a ser `GET /api/auth/login/`
+> (405) — o DRF checa throttle em `initial()`, antes de resolver o handler do
+> método, então um método não permitido é a sonda anônima mais limpa que existe:
+> não autentica, não escreve `AccessAttempt` do django-axes, não depende de
+> fixture.
+
+**1. Liveness e readiness separados por CONSEQUÊNCIA, não por rigor**
+
+`/api/health/` (banco) continua sendo o que a plataforma consulta; o novo
+`/api/health/ready/` cobre banco **e Redis**. O Redis fica fora da liveness de
+propósito: um health que a plataforma consulta é gatilho de *restart*, e com o
+Redis na conta uma queda do cache — que hoje só degrada throttle e alertas,
+porque `core/throttling.py` falha aberto — passaria a reiniciar todos os
+containers de `web` em laço, sem que reiniciar consertasse nada. Seria
+transformar degradação em indisponibilidade, que é o que a Phase 4 recusou.
+
+Medido com o Redis parado: `ready` 503 `{"database":"up","redis":"down"}`,
+liveness 200.
+
+**2. A configuração do rastreador é um VALOR, não uma chamada**
+
+`sentry_sdk.init(...)` solto em `prod.py` não deixa ninguém afirmar nada: não se
+testa uma chamada. As opções viraram um dicionário em `core/observabilidade.py`,
+e cada invariante está sob teste — `send_default_pii=False`,
+`max_request_body_size="never"`, `before_send` e `before_send_transaction`
+apontando para o mesmo `scrub` do `RedactingFilter`. Um `send_default_pii=True`
+acrescentado por conveniência (é o que todo tutorial sugere) fica vermelho antes
+de virar vazamento.
+
+E a redação vai no `before_send`, não na confiança no filtro de log: o
+`RedactingFilter` está pendurado nos *handlers*, e a integração de logging do SDK
+não é um handler nosso — ela se enxerta no caminho do `logging` e vê o
+`LogRecord` por conta própria. Depender disso seria depender de ordem entre
+bibliotecas, que não é contrato.
+
+**3. "CI publica no push para main" foi reinterpretado — e o motivo está medido
+no repositório**
+
+O plano é de 2026-08-21 e a linha assumia que o CI implantaria. Não é o caso:
+`.railway/railway.ts` declara `source: github(REPO, { branch: BRANCH })`, então o
+push para `main` **já dispara o deploy**. Escrever um `railway up` no workflow
+criaria um segundo caminho de implantação — dois jeitos de colocar código no ar,
+um deles usado só às vezes, é como se ganha uma diferença entre o que se testou
+e o que está rodando.
+
+O que faltava de verdade era o **interlock**: o Railway observa o branch, não os
+checks, e implanta um push com o CI vermelho. Isso é ajuste de painel (**Wait for
+CI**), registrado no README junto dos outros que a Phase 3 já listava.
+
+O job novo (`pos-deploy`, só em push para `main`) faz o que o CI pode fazer de
+útil depois do deploy: espera `/api/health/ready/` na URL de produção reportar
+`status: ok` — o que inclui o Redis, que o healthcheck da plataforma não olha.
+Gated pela variável de repositório `URL_PRODUCAO`; sem ela, avisa e passa.
+Limitação registrada em comentário e no README: **não prova que a revisão nova é
+a que responde** — sem endpoint de versão, um 200 pode vir da revisão anterior.
+
+**Os tripwires funcionaram.** A rota nova quebrou dois testes de guarda —
+`test_every_api_route_is_classified` (rota não classificada como pública ou
+protegida) e `test_the_whole_api_surface_is_documented` (21 caminhos no schema
+para 20 classificados). Nenhum dos dois é sobre health: são sobre não deixar
+endpoint entrar sem decisão de permissão e sem documentação.
 
 **Verify:**
 ```bash
-docker compose exec -T web pytest tests/security/ core/tests/ -q
-curl -fsS http://localhost:8000/api/health/ready/ | grep -q '"redis": "up"'
-docker compose stop redis && \
-  curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/api/health/ready/   # 503
+docker compose exec -T web pytest tests/security/ core/tests/ -q   # ✅ 66 nos arquivos tocados
+curl -s localhost:8000/api/health/ready/     # ✅ {"status":"ok","database":"up","redis":"up"}
+docker compose stop redis
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/api/health/ready/   # ✅ 503
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/api/health/         # ✅ 200 (liveness intacta)
 docker compose start redis
 ```
+
+Também exercitado: 160 requisições seguidas nos dois endpoints, todas 200 — sem
+a isenção, a 61ª seria 429.
 
 ---
 

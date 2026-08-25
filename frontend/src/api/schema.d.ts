@@ -188,10 +188,30 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Health check
-     * @description Retorna 200 se a aplicação alcança o banco; 503 caso contrário.
+     * Liveness
+     * @description 200 se o processo está de pé e alcança o banco; 503 caso contrário. É este que a plataforma consulta — de propósito **não** olha o Redis.
      */
     get: operations["health_retrieve"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/health/ready/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Readiness
+     * @description Estado das dependências — banco e Redis. 503 se qualquer uma estiver fora. Endpoint de observação: a plataforma **não** o consulta.
+     */
+    get: operations["health_ready_retrieve"];
     put?: never;
     post?: never;
     delete?: never;
@@ -1019,6 +1039,37 @@ export interface operations {
     };
   };
   health_retrieve: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  health_ready_retrieve: {
     parameters: {
       query?: never;
       header?: never;

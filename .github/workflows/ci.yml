@@ -37,6 +37,22 @@ jobs:
       - name: Subir a stack
         run: docker compose up -d --wait db redis web
 
+      # Os `.txt` declaram intenção; os `.lock` declaram o que será instalado.
+      # Editar um sem regenerar o outro faz a imagem instalar algo diferente do
+      # que se pediu — e, como o Dockerfile usa `--require-hashes`, o build
+      # quebraria só lá na frente, com uma mensagem sobre hash em vez de sobre
+      # a dependência que alguém acrescentou.
+      #
+      # A receita é a do `make locks-check`, e não uma cópia dela aqui: duas
+      # versões do mesmo comando divergem em silêncio, e a que decide o merge
+      # seria a que ninguém roda na máquina. Só a anotação de erro é daqui.
+      - name: Os locks estão em dia com os .txt
+        run: |
+          make locks-check || {
+            echo "::error::requirements/*.lock dessincronizado — rode 'make locks' e commite o resultado"
+            exit 1
+          }
+
       - name: Lint
         run: docker compose exec -T web ruff check .
 
@@ -103,11 +119,11 @@ jobs:
       - name: Subir banco e cache
         run: docker compose up -d --wait db redis
 
-      # `REQUIREMENTS=base.txt` é o ponto: a imagem de produção não leva pytest,
+      # `REQUIREMENTS=base.lock` é o ponto: a imagem de produção não leva pytest,
       # ruff nem factory-boy. Se algum código de aplicação importar algo que só
       # existe em dev.txt, o build ou o boot quebram aqui.
       - name: Construir a imagem do backend
-        run: docker build --build-arg REQUIREMENTS=base.txt -t rt-api:prod .
+        run: docker build --build-arg REQUIREMENTS=base.lock -t rt-api:prod .
 
       # O entrypoint de verdade: migrate e depois `exec gunicorn` na $PORT.
       # `--network host` para alcançar o Postgres publicado pelo compose.
@@ -234,14 +250,25 @@ jobs:
       # O limite de taxa, exercitado na imagem de producao contra o Redis de
       # verdade. Anonimo e 60/hora por default; 70 requisicoes tem que esbarrar.
       #
-      # Se este passo passar a devolver 200 em todas, o provavel e o cache ter
-      # caido para LocMem (contador por worker) ou o fail-open estar mascarando
-      # uma queda do Redis — as duas coisas que fazem o teto existir so no papel.
+      # A sonda e `GET /api/auth/login/`, que responde 405 — e NAO o health, que
+      # esta isento do throttle desde a Phase 9 (ver a nota em `core/views.py`:
+      # um monitor batendo a cada 10s faz 360/hora e recebia 429, o que se le
+      # como "a aplicacao caiu" com ela de pe).
+      #
+      # Metodo nao permitido e a sonda anonima mais limpa que existe aqui: o DRF
+      # checa throttle em `initial()`, ANTES de resolver o handler do metodo,
+      # entao nao ha tentativa de autenticacao nem registro no django-axes.
+      #
+      # Se este passo passar a devolver so 405, o provavel e o cache ter caido
+      # para LocMem (contador por worker) ou o fail-open estar mascarando uma
+      # queda do Redis — as duas coisas que fazem o teto existir so no papel.
       - name: O limite de taxa vale de ponta a ponta
         run: |
           bateu429=nao
           for i in $(seq 1 70); do
-            codigo=$(curl -s -o /dev/null -w '%{http_code}'               -H 'X-Forwarded-Proto: https'               http://localhost:8000/api/health/)
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'X-Forwarded-Proto: https' \
+              http://localhost:8000/api/auth/login/)
             if [ "$codigo" = "429" ]; then
               echo "429 na requisicao $i — limite aplicado"
               bateu429=sim
@@ -253,6 +280,22 @@ jobs:
             docker logs rt-api | tail -30
             exit 1
           fi
+
+      # A contraprova da isencao: o health NAO pode esbarrar no teto, por mais
+      # que se bata nele. Sem este passo, alguem "conserta" o passo de cima
+      # voltando a sonda para o health e o 429 no monitor volta junto.
+      - name: O health continua fora do teto
+        run: |
+          for i in $(seq 1 80); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'X-Forwarded-Proto: https' \
+              http://localhost:8000/api/health/ready/)
+            if [ "$codigo" != "200" ]; then
+              echo "::error::/api/health/ready/ devolveu $codigo na requisicao $i — a isencao de throttle sumiu"
+              exit 1
+            fi
+          done
+          echo "80 requisicoes no health, nenhuma barrada"
 
       - name: Derrubar o backend
         run: docker rm -f rt-api
@@ -373,3 +416,63 @@ jobs:
       - name: Logs (em caso de falha)
         if: failure()
         run: docker compose logs --no-color
+
+  # ------------------------------------------------------------ pós-deploy
+  #
+  # Quem implanta é o Railway, não este workflow: os serviços têm
+  # `source: github(REPO, { branch: BRANCH })` em `.railway/railway.ts`, então o
+  # push para `main` já dispara o deploy sozinho. Escrever um `railway up` aqui
+  # criaria um segundo caminho de implantação — dois jeitos de colocar código no
+  # ar, um deles usado só às vezes, é como se ganha uma diferença entre o que se
+  # testou e o que está rodando.
+  #
+  # O papel do CI depois do deploy é outro: OLHAR. O objetivo da Phase 9 é saber
+  # que quebrou antes do usuário contar, e o endpoint que responde isso agora
+  # cobre o Redis também.
+  #
+  # ⚠️ O que este job NÃO prova: que a revisão nova é a que está respondendo.
+  # Sem um endpoint de versão, um 200 aqui pode vir da revisão anterior ainda em
+  # serviço. Quem gateia a troca de revisão é o healthcheck do próprio Railway
+  # (`healthcheck: "/api/health/"`); este job cobre o que aquele não olha — as
+  # dependências — e serve de registro de que a aplicação respondeu depois do
+  # deploy.
+  pos-deploy:
+    name: pós-deploy — as dependências no ar respondem
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, producao, contrato]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      # Variável de repositório, não segredo: é um domínio público, e segredo
+      # aqui só dificultaria diagnosticar o job sem esconder nada de ninguém.
+      - name: A URL de produção está configurada?
+        id: alvo
+        run: |
+          if [ -z "${{ vars.URL_PRODUCAO }}" ]; then
+            echo "::warning::variável de repositório URL_PRODUCAO não configurada — verificação pós-deploy pulada. Defina-a em Settings > Secrets and variables > Actions > Variables (ex.: https://web-xxxx.up.railway.app)."
+            echo "configurado=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "configurado=sim" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A janela é generosa de propósito: o Railway constrói a imagem do zero a
+      # cada push, e um build lento seguido de um migrate no start passa
+      # facilmente de dois minutos. Um timeout curto aqui reprovaria deploys
+      # sadios, e um job que reprova sem motivo é desligado antes de pegar o
+      # primeiro problema de verdade.
+      - name: As dependências respondem depois do deploy
+        if: steps.alvo.outputs.configurado == 'sim'
+        run: |
+          alvo="${{ vars.URL_PRODUCAO }}/api/health/ready/"
+          for i in $(seq 1 40); do
+            corpo=$(curl -fsS --max-time 10 "$alvo" 2>/dev/null || true)
+            case "$corpo" in
+              *'"status":"ok"'*)
+                echo "pós-deploy: $corpo"
+                exit 0
+                ;;
+            esac
+            sleep 15
+          done
+          echo "::error::$alvo não reportou status ok em 10 minutos. Última resposta: ${corpo:-<sem resposta>}"
+          echo "503 com \"redis\":\"down\" é o cache fora — o serviço responde, alertas e limite de taxa é que não."
+          exit 1

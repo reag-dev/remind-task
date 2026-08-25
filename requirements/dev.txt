@@ -1,3 +1,12 @@
+# Deps de desenvolvimento — remind-task
+#
+# Como o `base.txt`, este arquivo declara INTENÇÃO. Quem instala é `dev.lock`,
+# compilado com `--constraint=requirements/base.lock` para que as versões
+# comuns aos dois sejam idênticas — sem isso, a imagem de dev e a de produção
+# poderiam divergir justamente nas deps compartilhadas.
+#
+# Editou algo aqui? `make locks`.
+
 -r base.txt
 
 pytest>=8.3
