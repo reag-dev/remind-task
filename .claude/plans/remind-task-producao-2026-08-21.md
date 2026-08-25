@@ -457,6 +457,17 @@ curl -fsS -o /dev/null -w '%{http_code}\n' https://<dominio-front>/tabelas/abc  
 >    (`core/throttling.py`), para uma queda do Redis não virar 500 em toda
 >    requisição. Sem isso a phase ampliaria a indisponibilidade que ela existe
 >    para reduzir.
+>
+> **Correção posterior (2026-08-25, achada rodando a suíte da Phase 7).**
+> `test_anonimo_leva_429_ao_passar_do_limite` era **flaky**: o contador anônimo
+> é por IP, e o healthcheck do `docker-compose` bate em `/api/health/` a cada
+> 10s a partir do mesmo `127.0.0.1`, no processo do runserver, incrementando a
+> mesma chave no mesmo Redis. Quando o healthcheck caía dentro da janela do
+> teste, a terceira requisição já voltava 429. Medido: falha reproduzível com o
+> healthcheck ligado, 7/7 verdes com ele desligado. A correção é o teste passar
+> um `REMOTE_ADDR` só dele — 3/3 verdes com o healthcheck de volta. O CI corria
+> o mesmo risco: `up -d --wait web` deixa o healthcheck ativo durante o
+> `pytest --cov`.
 
 
 **Objective:** fechar o que só aparece sob tráfego real.
@@ -616,25 +627,55 @@ cd frontend && npm run typecheck && npm run lint
 
 ---
 
-### Phase 7 — Builds reproduzíveis
+### Phase 7 — Builds reproduzíveis 🟢 concluída 2026-08-25
 
 **Objective:** a mesma imagem, construída em datas diferentes, instala as mesmas
 versões.
 
 `pip-compile` gerando `requirements/*.lock` com hashes; `Dockerfile` instala do
-`.lock`; job de CI que falha se o lock estiver dessincronizado — mesmo princípio
-do job `contrato`, que já guarda a fronteira schema↔cliente.
+`.lock` com `--require-hashes`; passo de CI que falha se o lock estiver
+dessincronizado — mesmo princípio do job `contrato`, que já guarda a fronteira
+schema↔cliente.
 
 **Files Touched:**
 `requirements/base.lock` (novo) · `requirements/dev.lock` (novo) ·
-`requirements/base.txt` · `Dockerfile` · `.github/workflows/ci.yml`
+`requirements/base.txt` · `requirements/dev.txt` · `Dockerfile` · `Makefile` ·
+`.github/workflows/ci.yml` · `README.md`
+
+**O check compara PINS, não hashes — e isso foi medido, não presumido.** A
+primeira versão recompilava com `--generate-hashes` e comparava o arquivo
+inteiro. Custo real: `--generate-hashes` **baixa todo artefato resolvido** para
+calcular o hash — **~4 minutos**, e nesta máquina o passo terminou em
+`ReadTimeoutError` de `files.pythonhosted.org` **duas vezes seguidas**, com os
+locks perfeitamente em dia. Um check que reprova PR correto por timeout de
+download é pior que não ter check: ensina a ignorar o vermelho.
+
+Sem hashes, a mesma recompilação leva **~11 s** e responde a pergunta que
+importa — "o lock reflete o `.txt`?" —, porque isso está nos pins
+(`nome==versão`, transitivas incluídas). A integridade dos artefatos continua
+cobrada onde tem efeito: o `pip install --require-hashes` do `Dockerfile` recusa
+qualquer artefato que não case com o hash declarado, no build.
+
+A receita mora no `Makefile` (`make locks` / `make locks-check`); o CI **chama o
+alvo** em vez de repetir o comando no workflow. Duas cópias do mesmo script
+divergem em silêncio, e a que decide o merge seria justamente a que ninguém roda
+na máquina.
 
 **Verify:**
 ```bash
-docker compose exec -T web pip-compile --generate-hashes -o /tmp/check.lock requirements/base.txt
-diff <(grep -v '^#' requirements/base.lock) <(grep -v '^#' /tmp/check.lock) && echo "lock em dia"
-docker compose build web && docker compose exec -T web pytest -q
+make locks-check                       # ~11 s; "locks em dia"
+docker compose build web               # dev.lock, --require-hashes
+docker build --build-arg REQUIREMENTS=base.lock -t rt-api:prod .
+docker compose exec -T web pytest -q
 ```
+
+Testado também o caminho negativo: `requests>=2.32` acrescentado ao `base.txt`
+sem regenerar o lock → `locks-check` sai com 1 e imprime o diff, com
+`requests==2.34.2` e `urllib3==2.7.0` (a transitiva) faltando no lock.
+
+**Não coberto, de olho aberto:** a tag `python:3.12-slim` e os pacotes `apt` do
+`Dockerfile` continuam móveis. Pinar a imagem base por digest custaria nunca
+receber correção de segurança sem alguém lembrar de bumpar.
 
 ---
 

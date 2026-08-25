@@ -56,11 +56,26 @@ def taxas(rates=None, **kwargs):
 
 
 def test_anonimo_leva_429_ao_passar_do_limite(api_client):
+    """
+    `REMOTE_ADDR` explícito, e não o 127.0.0.1 padrão do test client, porque o
+    contador anônimo é por IP e ele é COMPARTILHADO com quem mais bater no
+    endpoint a partir do mesmo endereço. O healthcheck do `docker-compose` faz
+    exatamente isso: `curl http://localhost:8000/api/health/` a cada 10s, no
+    processo do runserver, incrementando a mesma chave no mesmo Redis.
+
+    Com o padrão, o teste falha quando o healthcheck cai dentro da sua janela —
+    a terceira requisição volta 429 antes da hora. Raro o bastante para passar
+    despercebido na máquina e reprovar um PR sem relação, que é a pior forma de
+    teste vermelho. Medido: 7/7 verdes com o healthcheck desligado, e falha
+    reproduzível com ele ligado.
+    """
+    ip_so_deste_teste = {"REMOTE_ADDR": "203.0.113.7"}
+
     with taxas(rates={"anon": "3/hour"}):
         for _ in range(3):
-            assert api_client.get(reverse("core:health")).status_code == 200
+            assert api_client.get(reverse("core:health"), **ip_so_deste_teste).status_code == 200
 
-        assert api_client.get(reverse("core:health")).status_code == 429
+        assert api_client.get(reverse("core:health"), **ip_so_deste_teste).status_code == 429
 
 
 def test_usuario_autenticado_tem_teto_proprio(auth_client):
