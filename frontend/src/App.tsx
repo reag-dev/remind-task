@@ -5,7 +5,9 @@ import { BrowserRouter, Route, Routes } from "react-router";
 import { criarQueryClient } from "./api/query.ts";
 import { AuthProvider } from "./auth/AuthProvider.tsx";
 import { Layout } from "./components/Layout.tsx";
+import { EsqueciSenha } from "./routes/EsqueciSenha.tsx";
 import { Login } from "./routes/Login.tsx";
+import { RedefinirSenha } from "./routes/RedefinirSenha.tsx";
 import { Registro } from "./routes/Registro.tsx";
 import { RotaProtegida } from "./routes/RotaProtegida.tsx";
 import { Alertas } from "./routes/Alertas.tsx";
@@ -28,6 +30,8 @@ export function App() {
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/registro" element={<Registro />} />
+            <Route path="/esqueci-senha" element={<EsqueciSenha />} />
+            <Route path="/redefinir-senha" element={<RedefinirSenha />} />
             <Route element={<RotaProtegida />}>
               <Route element={<Layout />}>
                 <Route path="/" element={<Tabelas />} />

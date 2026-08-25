@@ -234,3 +234,44 @@ def test_health_e_ready_ficam_fora_do_teto(api_client):
             for _ in range(5):
                 resposta = api_client.get(reverse(rota), **ip_so_deste_teste)
                 assert resposta.status_code == 200, f"{rota} levou {resposta.status_code}"
+
+
+def test_recuperacao_de_senha_tem_teto_proprio(api_client):
+    """
+    O endpoint manda e-mail para um endereço que QUEM CHAMA escolhe.
+
+    Sem teto, é relay de spam contra caixa de terceiro — e cada chamada custa um
+    SMTP inteiro do lado de cá. O teto é por IP porque o fluxo é anônimo por
+    definição: quem esqueceu a senha não tem sessão.
+
+    O e-mail nem precisa existir: a view responde 204 de qualquer jeito (ver
+    `tests/security/test_user_enumeration.py`), e é justamente por isso que o
+    limite não pode depender de a conta existir.
+    """
+    ip_so_deste_teste = {"REMOTE_ADDR": "203.0.113.11"}
+    url = reverse("accounts:password-reset")
+    corpo = {"email": "ninguem@example.com"}
+
+    with taxas(rates={"password_reset": "2/hour"}):
+        for _ in range(2):
+            resposta = api_client.post(url, corpo, format="json", **ip_so_deste_teste)
+            assert resposta.status_code == 204
+
+        assert api_client.post(url, corpo, format="json", **ip_so_deste_teste).status_code == 429
+
+
+def test_o_teto_da_recuperacao_vale_tambem_para_consumir_o_link(api_client):
+    """
+    A segunda metade do fluxo é onde se tenta ADIVINHAR token — e adivinhar
+    exige repetição. Sem limite aqui, o teto do pedido protegeria só metade.
+    """
+    ip_so_deste_teste = {"REMOTE_ADDR": "203.0.113.12"}
+    url = reverse("accounts:password-reset-confirm")
+    corpo = {"uid": "qualquer", "token": "chute", "password": "Vencimento!Contrato#2027"}
+
+    with taxas(rates={"password_reset": "2/hour"}):
+        for _ in range(2):
+            resposta = api_client.post(url, corpo, format="json", **ip_so_deste_teste)
+            assert resposta.status_code == 400
+
+        assert api_client.post(url, corpo, format="json", **ip_so_deste_teste).status_code == 429

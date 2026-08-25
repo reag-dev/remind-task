@@ -1,6 +1,9 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
+from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 
@@ -77,3 +80,75 @@ class LoginSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["user"] = UserSerializer(self.user).data
         return data
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """
+    Só o endereço. O que se faz com ele é decisão da view — e a decisão é a
+    mesma, exista ou não a conta.
+    """
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value: str) -> str:
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """
+    Consome o link: `uid` + `token` + senha nova.
+
+    Nada de token próprio, tabela de pedidos ou coluna nova. O
+    `PasswordResetTokenGenerator` do Django deriva o hash a partir da senha
+    ATUAL e do `last_login` do usuário — então trocar a senha invalida o token
+    sozinho, e não existe estado para expurgar. Um token caseiro aqui seria
+    refazer, pior, o que o framework já faz.
+    """
+
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+        trim_whitespace=False,  # espaço no início/fim é senha válida
+    )
+
+    @staticmethod
+    def _usuario(uid: str):
+        """
+        O usuário do `uid`, ou None se o valor não decodifica para um existente.
+
+        A lista de exceções é larga porque o `uid` vem de uma URL que qualquer
+        um edita: base64 inválido levanta uma coisa, um pk que não é UUID
+        levanta outra, e um UUID válido sem linha correspondente levanta a
+        terceira. Todas terminam no mesmo lugar — e é isso que importa, porque
+        distinguir os casos na resposta seria contar quais contas existem.
+        """
+        try:
+            return User.objects.get(pk=force_str(urlsafe_base64_decode(uid)))
+        except (TypeError, ValueError, OverflowError, DjangoValidationError, User.DoesNotExist):
+            return None
+
+    def validate(self, attrs):
+        user = self._usuario(attrs["uid"])
+
+        # Uid desconhecido e token errado dão a MESMA resposta, de propósito.
+        # Separá-los transformaria o endpoint num verificador de cadastro — o
+        # mesmo raciocínio do RS04, que devolve 404 em vez de 403 para não
+        # confirmar que um recurso existe.
+        if user is None or not default_token_generator.check_token(user, attrs["token"]):
+            raise serializers.ValidationError(
+                {"token": ["Link inválido ou expirado. Peça um novo."]}
+            )
+
+        # Os mesmos validadores do cadastro, com o usuário de verdade — é o que
+        # permite ao UserAttributeSimilarityValidator recusar uma senha parecida
+        # com o e-mail ou o nome. Uma recuperação que aceita senha fraca desfaz
+        # o cuidado que o registro tem.
+        try:
+            validate_password(attrs["password"], user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)}) from exc
+
+        attrs["user"] = user
+        return attrs

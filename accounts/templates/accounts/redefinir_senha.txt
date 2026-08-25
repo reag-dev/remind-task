@@ -1,0 +1,14 @@
+{% autoescape off %}Olá, {{ nome }}.
+
+Alguém pediu a redefinição da senha da conta {{ email }} no remind-task. Se foi
+você, abra o link abaixo — ele vale por {{ validade_em_horas }} hora{{ validade_em_horas|pluralize }} e só pode ser
+usado uma vez:
+
+{{ link }}
+
+Se não foi você, ignore esta mensagem. Sua senha continua a mesma, e ninguém
+consegue trocá-la sem abrir este link.
+
+--
+remind-task
+{% endautoescape %}

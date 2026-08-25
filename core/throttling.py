@@ -70,3 +70,22 @@ class ExportacaoThrottle(FailOpenMixin, UserRateThrottle):
     """
 
     scope = "export"
+
+
+class RecuperacaoDeSenhaThrottle(FailOpenMixin, AnonRateThrottle):
+    """
+    Teto por IP para pedir e para consumir o link de recuperação.
+
+    `AnonRateThrottle` e não `UserRateThrottle` porque o fluxo é anônimo por
+    definição — quem esqueceu a senha não tem sessão. A identidade é o IP, com o
+    `NUM_PROXIES` já declarado em produção (sem ele, o teto seria contornável só
+    variando o `X-Forwarded-For`; ver a nota em `config/settings/base.py`).
+
+    Por que apertado: cada requisição faz o servidor mandar e-mail para um
+    endereço que QUEM CHAMA escolhe. Sem limite, o endpoint é um relay de spam
+    contra caixa de terceiro, e cada chamada custa um SMTP inteiro do lado de cá.
+
+    A taxa vem de `DEFAULT_THROTTLE_RATES["password_reset"]`.
+    """
+
+    scope = "password_reset"
