@@ -255,6 +255,7 @@ O que sobra para o painel:
 | `cron-alertas` | Restart Policy: **Never** | O cron roda de novo em 15 min; reiniciar so multiplica o mesmo erro no log |
 | `cron-alertas` | Start Command: `sh -c "python manage.py scan_alerts; python manage.py send_alert_emails"` | `scan_alerts` gera os alertas e `send_alert_emails` os entrega. **`sh -c` e obrigatorio**: o Railway roda o start command em *exec form*, sem shell, entao `;` e `&&` nao sao interpretados — sem o involucro o `;` vira argumento do `manage.py`. E `;` e nao `&&`, senao uma varredura que falhasse pularia a entrega dos pendentes que ja estavam na fila |
 | `web` e `frontend` | Variavel `PORT` declarada (8000 e 80) | O Railway tira a porta de destino do dominio do `EXPOSE` do Dockerfile mas injeta `PORT=8080` no container. Sem fixar, o processo sobe numa porta e o edge disca outra — e o dominio devolve 502 com a aplicacao de pe e o log limpo |
+| projeto | **Wait for CI** ligado | O Railway observa o branch, nao os checks: sem isto ele implanta um push com o CI vermelho. E o interlock que falta para "CD" significar alguma coisa — o workflow ja roda em todo push para `main` |
 
 Envio de e-mail (Phase 5): a aplicacao fala **SMTP puro**, sem SDK de
 fornecedor — trocar de provedor e trocar `EMAIL_HOST`, `EMAIL_PORT`,
@@ -389,16 +390,94 @@ com o papel `remind_app` criado antes, como o script faz — o bloco SQL está e
 
 ---
 
+## Observabilidade
+
+O objetivo é saber que quebrou antes de o usuário contar.
+
+### Dois health checks, com consequências diferentes
+
+| Rota | Cobre | Quem consulta |
+|---|---|---|
+| `/api/health/` | processo + **banco** | a plataforma (`healthcheck` em [`.railway/railway.ts`](.railway/railway.ts)) e o `docker-compose` |
+| `/api/health/ready/` | banco **e Redis** | quem observa: painel, monitor externo, o job pós-deploy do CI |
+
+```bash
+curl -s localhost:8000/api/health/          # {"status":"ok","database":"up"}
+curl -s localhost:8000/api/health/ready/    # {"status":"ok","database":"up","redis":"up"}
+```
+
+**O Redis fica fora da liveness de propósito.** Um health que a plataforma
+consulta é um gatilho de *restart*: falhou, o container é derrubado e sobe
+outro. Com o Redis na conta, uma queda do cache — que hoje degrada throttle e
+alertas e nada mais, porque [`core/throttling.py`](core/throttling.py) falha
+aberto — passaria a reiniciar todos os containers de `web` em laço, sem que
+reiniciar consertasse nada do lado do Redis. Seria transformar degradação em
+indisponibilidade, que é exatamente o que a Phase 4 recusou fazer.
+
+Medido, com o Redis parado:
+
+```
+ready:     503 {"status":"unhealthy","database":"up","redis":"down"}
+liveness:  200 {"status":"ok","database":"up"}
+```
+
+Nenhum dos dois devolve `str(exc)`: são `AllowAny`, e a URL do Redis carrega
+host, porta e — em produção — senha. O detalhe vai para o log, onde o
+`RedactingFilter` atua.
+
+### Os dois estão fora do limite de taxa
+
+Eram `anon`, 60/hour. Um monitor batendo a cada 10s faz 360/hour: a partir do
+61º, o que a plataforma e o painel recebem é **429**, e a leitura disso é "a
+aplicação caiu" com ela perfeitamente de pé. O sintoma já aparecia no log do
+compose antes da isenção — `Too Many Requests: /api/health/`, vindo do próprio
+healthcheck do container. Coberto por
+`tests/security/test_throttling.py::test_health_e_ready_ficam_fora_do_teto`.
+
+### Rastreamento de erro
+
+`SENTRY_DSN` vazio desliga tudo, e é assim que desenvolvimento e CI rodam. Com
+DSN, [`config/settings/prod.py`](config/settings/prod.py) inicializa o SDK — e a
+configuração não fica solta na chamada, porque **ninguém consegue afirmar nada
+sobre uma chamada, só sobre um valor**. Ela é um dicionário em
+[`core/observabilidade.py`](core/observabilidade.py), e cada invariante está sob
+teste:
+
+| Invariante | Por quê |
+|---|---|
+| `send_default_pii=False` | sem IP, cookies ou identidade do usuário no evento |
+| `max_request_body_size="never"` | é no corpo que trafega o `data` do registro |
+| `before_send` = o mesmo `scrub` do log | redige nome de chave e padrão de texto |
+| `before_send_transaction` = idem | transações carregam o mesmo contexto |
+
+O padrão de fábrica de qualquer APM captura corpo, cabeçalhos e **as variáveis
+locais de cada frame do traceback**. Um `IntegrityError` em `records` leva o
+`data` inteiro do registro nas locais do frame, colunas `is_sensitive`
+incluídas — sem que ninguém tenha escrito uma linha para colocá-lo lá. Ligar o
+SDK com a configuração padrão desfaz o RS05 num comando.
+
+**Por que no `before_send` e não confiando no filtro de log:** o
+`RedactingFilter` está pendurado nos *handlers*. A integração de logging do SDK
+não é um handler nosso — ela se enxerta no caminho do `logging` e vê o
+`LogRecord` por conta própria. Se o registro chega a ela antes de passar por um
+handler nosso, chega em claro: a redação dependeria de ordem entre bibliotecas,
+que não é contrato. `before_send` é o último ponto antes de virar tráfego de
+saída, e todo evento passa por ele.
+
+---
+
 ## CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda em todo push para
-`main` e em todo pull request, com três jobs:
+`main` e em todo pull request, com cinco jobs:
 
 | Job | O que roda |
 |---|---|
 | `backend` | verificação dos locks + `ruff check` + `pytest --cov` (gate de 85% do `.coveragerc`) |
 | `frontend` | `typecheck` + `lint` + `test --coverage` |
+| `producao` | constrói a imagem de produção (`base.lock`), sobe com gunicorn e exercita o healthcheck como a plataforma o faz |
 | `contrato` | regenera `schema.d.ts` do OpenAPI no ar e **exige diff vazio** |
+| `pos-deploy` | só em push para `main`: espera as dependências responderem na URL de produção |
 
 O job de backend roda **dentro do docker compose**, não com `services:` do
 GitHub Actions. Recriar o ambiente à mão significaria reproduzir o `init.sql`
@@ -419,6 +498,34 @@ recompila os `.txt` **dentro do container** e exige que os pins batam com os
 máquina — em vez de uma cópia do comando escrita no workflow: duas versões do
 mesmo script divergem em silêncio, e a que decide o merge seria justamente a que
 ninguém roda localmente.
+
+### O que o `pos-deploy` é — e o que ele não é
+
+Quem implanta é o **Railway**, não este workflow: os serviços têm
+`source: github(REPO, { branch: BRANCH })`, então o push para `main` já dispara
+o deploy sozinho. Escrever um `railway up` no CI criaria um segundo caminho de
+implantação, e dois jeitos de colocar código no ar — um deles usado só às
+vezes — é como se ganha uma diferença entre o que se testou e o que está
+rodando.
+
+O papel do CI depois do deploy é olhar: o job espera `/api/health/ready/`
+reportar `status: ok` na URL de produção, o que inclui o **Redis** — dependência
+que o healthcheck da plataforma não cobre, e cuja queda hoje se manifestaria
+como "os alertas pararam de chegar".
+
+Configure a variável de repositório **`URL_PRODUCAO`** (Settings → Secrets and
+variables → Actions → Variables) com o domínio do `web`. Sem ela o job avisa e
+passa — variável, e não segredo, porque é um domínio público e escondê-lo só
+dificultaria diagnosticar o job.
+
+⚠️ **O que ele não prova:** que a revisão nova é a que está respondendo. Sem
+endpoint de versão, um 200 pode vir da revisão anterior ainda em serviço. Quem
+gateia a troca de revisão é o healthcheck do próprio Railway; este job cobre o
+que aquele não olha.
+
+E o interlock que falta é de painel: **Wait for CI** ligado no projeto do
+Railway. Sem isso a plataforma observa o *branch*, não os *checks*, e implanta
+um push com o CI vermelho.
 
 Os dois jobs que sobem a stack fazem `cp .env.example .env` — o que também
 **valida o exemplo**: variável nova nas settings sem linha correspondente no
@@ -534,7 +641,8 @@ dois lados. `docker compose up -d` sobe tudo.
 
 | Método | Rota | O que faz |
 |---|---|---|
-| `GET` | `/api/health/` | Health check com checagem real de banco |
+| `GET` | `/api/health/` | Liveness — processo e banco. É o que a plataforma consulta |
+| `GET` | `/api/health/ready/` | Readiness — banco **e Redis**, para quem observa |
 | `POST` | `/api/auth/register/` | Cadastro (RF01) |
 | `POST` | `/api/auth/login/` | Login — access no corpo, refresh em cookie httpOnly (RF02) |
 | `POST` | `/api/auth/refresh/` | Renova o access, rotaciona o refresh |

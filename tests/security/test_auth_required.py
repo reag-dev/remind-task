@@ -22,6 +22,7 @@ pytestmark = pytest.mark.django_db
 # Rotas abertas de propósito, com o motivo de cada uma.
 PUBLICAS = {
     "core:health": "sonda de liveness do compose e do orquestrador",
+    "core:ready": "sonda de readiness — mesma razão, e cobre banco e Redis",
     "accounts:register": "criar conta é o que antecede ter token",
     "accounts:login": "idem",
     "accounts:refresh": "a autoridade é o refresh token no cookie, não o access",
@@ -140,4 +141,5 @@ def test_protected_routes_reject_a_garbage_token(api_client, mine, nome):
 def test_public_routes_answer_without_a_token(api_client):
     """A contraprova: as rotas abertas continuam abertas."""
     assert api_client.get(reverse("core:health")).status_code == 200
+    assert api_client.get(reverse("core:ready")).status_code == 200
     assert api_client.get(reverse("schema")).status_code == 200

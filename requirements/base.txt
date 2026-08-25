@@ -39,3 +39,8 @@ dj-database-url>=2.2,<4.0
 # Serve os estáticos do próprio processo do gunicorn. Sem isto, DEBUG=False
 # simplesmente não serve nada em /static/ — e o Admin fica sem CSS.
 whitenoise>=6.7,<7.0
+
+# Rastreamento de erro. Só entra em ação com SENTRY_DSN definido — ver
+# config/settings/prod.py, onde a inicialização carrega o mesmo `scrub` do
+# RedactingFilter. Um APM que capture corpo de requisição desfaz o RS05.
+sentry-sdk>=2.0,<3.0

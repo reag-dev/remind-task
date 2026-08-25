@@ -743,30 +743,102 @@ arquivo inexistente) já foram testadas e recusam corretamente.
 
 ---
 
-### Phase 9 — Observabilidade e CD
+### Phase 9 — Observabilidade e CD 🟢 concluída 2026-08-25
 
 **Objective:** saber que quebrou antes do usuário contar.
 
-- Health check cobre **Redis** além do Postgres: hoje o broker pode estar fora e
-  o health responde 200. Separar *liveness* de *readiness*.
-- Rastreamento de erro com o mesmo escrúpulo do `RedactingFilter`:
-  `send_default_pii=False`, e o `data` dos registros nunca no payload. Um APM que
-  capture o corpo da requisição desfaz o RS05.
-- CI publica no push para `main`.
-
 **Files Touched:**
-`core/views.py` · `core/urls.py` · `config/settings/prod.py` ·
-`requirements/base.txt` · `.github/workflows/ci.yml` ·
-`tests/security/test_observability_redaction.py` (novo)
+`core/views.py` · `core/urls.py` · `core/observabilidade.py` (novo) ·
+`config/settings/prod.py` · `requirements/base.txt` + os dois `.lock` ·
+`.github/workflows/ci.yml` · `.env.example` · `.env.prod.example` ·
+`README.md` · `core/tests/test_health.py` ·
+`tests/security/test_observability_redaction.py` (novo) ·
+`tests/security/test_throttling.py` · `tests/security/test_auth_required.py`
+
+> **O health estava sujeito ao limite de taxa, e ninguém tinha ligado os
+> pontos.** Os endpoints são `AllowAny`, então caíam no teto `anon` — 60/hour.
+> Um monitor batendo a cada 10s faz 360/hour: a partir do 61º a plataforma e o
+> painel recebem **429**, e a leitura disso é "a aplicação caiu" com ela
+> perfeitamente de pé. O sintoma já estava no log do compose desde a Phase 4 —
+> `Too Many Requests: /api/health/`, vindo do healthcheck do próprio container —
+> e foi lido como ruído até virar a falha flaky da Phase 8. Agora os dois
+> endpoints de observação são isentos, com teste.
+>
+> Efeito colateral: `test_anonimo_leva_429_ao_passar_do_limite` usava o health
+> como sonda e virou tautologia. A sonda passou a ser `GET /api/auth/login/`
+> (405) — o DRF checa throttle em `initial()`, antes de resolver o handler do
+> método, então um método não permitido é a sonda anônima mais limpa que existe:
+> não autentica, não escreve `AccessAttempt` do django-axes, não depende de
+> fixture.
+
+**1. Liveness e readiness separados por CONSEQUÊNCIA, não por rigor**
+
+`/api/health/` (banco) continua sendo o que a plataforma consulta; o novo
+`/api/health/ready/` cobre banco **e Redis**. O Redis fica fora da liveness de
+propósito: um health que a plataforma consulta é gatilho de *restart*, e com o
+Redis na conta uma queda do cache — que hoje só degrada throttle e alertas,
+porque `core/throttling.py` falha aberto — passaria a reiniciar todos os
+containers de `web` em laço, sem que reiniciar consertasse nada. Seria
+transformar degradação em indisponibilidade, que é o que a Phase 4 recusou.
+
+Medido com o Redis parado: `ready` 503 `{"database":"up","redis":"down"}`,
+liveness 200.
+
+**2. A configuração do rastreador é um VALOR, não uma chamada**
+
+`sentry_sdk.init(...)` solto em `prod.py` não deixa ninguém afirmar nada: não se
+testa uma chamada. As opções viraram um dicionário em `core/observabilidade.py`,
+e cada invariante está sob teste — `send_default_pii=False`,
+`max_request_body_size="never"`, `before_send` e `before_send_transaction`
+apontando para o mesmo `scrub` do `RedactingFilter`. Um `send_default_pii=True`
+acrescentado por conveniência (é o que todo tutorial sugere) fica vermelho antes
+de virar vazamento.
+
+E a redação vai no `before_send`, não na confiança no filtro de log: o
+`RedactingFilter` está pendurado nos *handlers*, e a integração de logging do SDK
+não é um handler nosso — ela se enxerta no caminho do `logging` e vê o
+`LogRecord` por conta própria. Depender disso seria depender de ordem entre
+bibliotecas, que não é contrato.
+
+**3. "CI publica no push para main" foi reinterpretado — e o motivo está medido
+no repositório**
+
+O plano é de 2026-08-21 e a linha assumia que o CI implantaria. Não é o caso:
+`.railway/railway.ts` declara `source: github(REPO, { branch: BRANCH })`, então o
+push para `main` **já dispara o deploy**. Escrever um `railway up` no workflow
+criaria um segundo caminho de implantação — dois jeitos de colocar código no ar,
+um deles usado só às vezes, é como se ganha uma diferença entre o que se testou
+e o que está rodando.
+
+O que faltava de verdade era o **interlock**: o Railway observa o branch, não os
+checks, e implanta um push com o CI vermelho. Isso é ajuste de painel (**Wait for
+CI**), registrado no README junto dos outros que a Phase 3 já listava.
+
+O job novo (`pos-deploy`, só em push para `main`) faz o que o CI pode fazer de
+útil depois do deploy: espera `/api/health/ready/` na URL de produção reportar
+`status: ok` — o que inclui o Redis, que o healthcheck da plataforma não olha.
+Gated pela variável de repositório `URL_PRODUCAO`; sem ela, avisa e passa.
+Limitação registrada em comentário e no README: **não prova que a revisão nova é
+a que responde** — sem endpoint de versão, um 200 pode vir da revisão anterior.
+
+**Os tripwires funcionaram.** A rota nova quebrou dois testes de guarda —
+`test_every_api_route_is_classified` (rota não classificada como pública ou
+protegida) e `test_the_whole_api_surface_is_documented` (21 caminhos no schema
+para 20 classificados). Nenhum dos dois é sobre health: são sobre não deixar
+endpoint entrar sem decisão de permissão e sem documentação.
 
 **Verify:**
 ```bash
-docker compose exec -T web pytest tests/security/ core/tests/ -q
-curl -fsS http://localhost:8000/api/health/ready/ | grep -q '"redis": "up"'
-docker compose stop redis && \
-  curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/api/health/ready/   # 503
+docker compose exec -T web pytest tests/security/ core/tests/ -q   # ✅ 66 nos arquivos tocados
+curl -s localhost:8000/api/health/ready/     # ✅ {"status":"ok","database":"up","redis":"up"}
+docker compose stop redis
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/api/health/ready/   # ✅ 503
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8000/api/health/         # ✅ 200 (liveness intacta)
 docker compose start redis
 ```
+
+Também exercitado: 160 requisições seguidas nos dois endpoints, todas 200 — sem
+a isenção, a 61ª seria 429.
 
 ---
 

@@ -57,25 +57,31 @@ def taxas(rates=None, **kwargs):
 
 def test_anonimo_leva_429_ao_passar_do_limite(api_client):
     """
-    `REMOTE_ADDR` explícito, e não o 127.0.0.1 padrão do test client, porque o
-    contador anônimo é por IP e ele é COMPARTILHADO com quem mais bater no
-    endpoint a partir do mesmo endereço. O healthcheck do `docker-compose` faz
-    exatamente isso: `curl http://localhost:8000/api/health/` a cada 10s, no
-    processo do runserver, incrementando a mesma chave no mesmo Redis.
+    A sonda é `GET /api/auth/login/`, que responde 405.
 
-    Com o padrão, o teste falha quando o healthcheck cai dentro da sua janela —
-    a terceira requisição volta 429 antes da hora. Raro o bastante para passar
-    despercebido na máquina e reprovar um PR sem relação, que é a pior forma de
-    teste vermelho. Medido: 7/7 verdes com o healthcheck desligado, e falha
-    reproduzível com ele ligado.
+    Não é rebuscado: o DRF checa throttle em `initial()`, ANTES de resolver o
+    handler do método. Um método não permitido é a sonda anônima mais limpa que
+    existe aqui — não tenta autenticar, não escreve `AccessAttempt` do
+    django-axes e não depende de nenhum dado de fixture. O que se está medindo é
+    o teto, não o endpoint.
+
+    Era `/api/health/` até a Phase 9 isentar os endpoints de observação do
+    throttle (ver `test_health_e_ready_ficam_fora_do_teto`) — com a isenção, a
+    sonda antiga passou a devolver 200 para sempre e o teste virou tautologia.
+
+    `REMOTE_ADDR` explícito, e não o 127.0.0.1 padrão do test client, porque o
+    contador anônimo é por IP e ele é COMPARTILHADO com quem mais bater a partir
+    do mesmo endereço — o healthcheck do compose, por exemplo, que a cada 10s
+    consumia cota e fazia este teste falhar sozinho de vez em quando.
     """
     ip_so_deste_teste = {"REMOTE_ADDR": "203.0.113.7"}
+    sonda = reverse("accounts:login")
 
     with taxas(rates={"anon": "3/hour"}):
         for _ in range(3):
-            assert api_client.get(reverse("core:health"), **ip_so_deste_teste).status_code == 200
+            assert api_client.get(sonda, **ip_so_deste_teste).status_code == 405
 
-        assert api_client.get(reverse("core:health"), **ip_so_deste_teste).status_code == 429
+        assert api_client.get(sonda, **ip_so_deste_teste).status_code == 429
 
 
 def test_usuario_autenticado_tem_teto_proprio(auth_client):
@@ -207,3 +213,24 @@ def test_a_identidade_do_usuario_autenticado_ignora_o_ip(user):
 
     assert str(user.pk) in chave
     assert "10.0.0.9" not in chave
+
+
+def test_health_e_ready_ficam_fora_do_teto(api_client):
+    """
+    Os endpoints de observação não podem ser silenciados pelo limite anônimo.
+
+    Eles são `AllowAny`, então caem no teto `anon` — 60/hour por padrão. Um
+    monitor batendo a cada 10s faz 360/hour: a partir do 61º, o que a plataforma
+    e o painel recebem é 429, e a leitura disso é "a aplicação está fora" quando
+    ela está perfeitamente de pé. O sintoma já aparecia no log do compose antes
+    da isenção — `Too Many Requests: /api/health/`, vindo do healthcheck.
+
+    Com `anon` em 1/hour, sem a isenção a segunda requisição já seria 429.
+    """
+    ip_so_deste_teste = {"REMOTE_ADDR": "203.0.113.9"}
+
+    with taxas(rates={"anon": "1/hour"}):
+        for rota in ("core:health", "core:ready"):
+            for _ in range(5):
+                resposta = api_client.get(reverse(rota), **ip_so_deste_teste)
+                assert resposta.status_code == 200, f"{rota} levou {resposta.status_code}"

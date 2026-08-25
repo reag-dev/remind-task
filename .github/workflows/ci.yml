@@ -389,3 +389,63 @@ jobs:
       - name: Logs (em caso de falha)
         if: failure()
         run: docker compose logs --no-color
+
+  # ------------------------------------------------------------ pós-deploy
+  #
+  # Quem implanta é o Railway, não este workflow: os serviços têm
+  # `source: github(REPO, { branch: BRANCH })` em `.railway/railway.ts`, então o
+  # push para `main` já dispara o deploy sozinho. Escrever um `railway up` aqui
+  # criaria um segundo caminho de implantação — dois jeitos de colocar código no
+  # ar, um deles usado só às vezes, é como se ganha uma diferença entre o que se
+  # testou e o que está rodando.
+  #
+  # O papel do CI depois do deploy é outro: OLHAR. O objetivo da Phase 9 é saber
+  # que quebrou antes do usuário contar, e o endpoint que responde isso agora
+  # cobre o Redis também.
+  #
+  # ⚠️ O que este job NÃO prova: que a revisão nova é a que está respondendo.
+  # Sem um endpoint de versão, um 200 aqui pode vir da revisão anterior ainda em
+  # serviço. Quem gateia a troca de revisão é o healthcheck do próprio Railway
+  # (`healthcheck: "/api/health/"`); este job cobre o que aquele não olha — as
+  # dependências — e serve de registro de que a aplicação respondeu depois do
+  # deploy.
+  pos-deploy:
+    name: pós-deploy — as dependências no ar respondem
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, producao, contrato]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      # Variável de repositório, não segredo: é um domínio público, e segredo
+      # aqui só dificultaria diagnosticar o job sem esconder nada de ninguém.
+      - name: A URL de produção está configurada?
+        id: alvo
+        run: |
+          if [ -z "${{ vars.URL_PRODUCAO }}" ]; then
+            echo "::warning::variável de repositório URL_PRODUCAO não configurada — verificação pós-deploy pulada. Defina-a em Settings > Secrets and variables > Actions > Variables (ex.: https://web-xxxx.up.railway.app)."
+            echo "configurado=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "configurado=sim" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A janela é generosa de propósito: o Railway constrói a imagem do zero a
+      # cada push, e um build lento seguido de um migrate no start passa
+      # facilmente de dois minutos. Um timeout curto aqui reprovaria deploys
+      # sadios, e um job que reprova sem motivo é desligado antes de pegar o
+      # primeiro problema de verdade.
+      - name: As dependências respondem depois do deploy
+        if: steps.alvo.outputs.configurado == 'sim'
+        run: |
+          alvo="${{ vars.URL_PRODUCAO }}/api/health/ready/"
+          for i in $(seq 1 40); do
+            corpo=$(curl -fsS --max-time 10 "$alvo" 2>/dev/null || true)
+            case "$corpo" in
+              *'"status":"ok"'*)
+                echo "pós-deploy: $corpo"
+                exit 0
+                ;;
+            esac
+            sleep 15
+          done
+          echo "::error::$alvo não reportou status ok em 10 minutos. Última resposta: ${corpo:-<sem resposta>}"
+          echo "503 com \"redis\":\"down\" é o cache fora — o serviço responde, alertas e limite de taxa é que não."
+          exit 1
