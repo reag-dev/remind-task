@@ -1,0 +1,21 @@
+{% autoescape off %}Olá, {{ nome }}.
+
+A conta {{ email }} foi excluída do remind-task em {{ quando|date:"d/m/Y H:i" }}.
+
+Foram apagados junto com ela:
+
+  tabelas ...... {{ tabelas }}
+  registros .... {{ registros }}
+  regras ....... {{ regras }}
+  alertas ...... {{ alertas }}
+
+Todas as sessões abertas foram encerradas.
+
+Se NÃO foi você quem pediu isto, responda a esta mensagem o quanto antes: a
+exclusão é definitiva e não há como desfazê-la, mas o registro de que ela
+aconteceu — e quando — pode ser o que falta para entender o que houve com a sua
+conta.
+
+--
+remind-task
+{% endautoescape %}

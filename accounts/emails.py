@@ -73,3 +73,43 @@ def enviar(user) -> None:
     de fora, não.
     """
     montar(user).send(fail_silently=True)
+
+
+# ------------------------------------------------- exclusão de conta (Phase 11)
+
+
+def montar_exclusao(email: str, nome: str, quando, resumo: dict) -> EmailMessage:
+    """
+    O aviso de conta excluída.
+
+    Recebe primitivos, e não o objeto `user`, porque quando isto é chamado a
+    LINHA JÁ NÃO EXISTE — o e-mail sai depois do commit da exclusão (ver
+    `AccountDeleteView`). Passar a instância aqui daria um objeto zumbi, com pk
+    apontando para nada, e qualquer acesso a relação levantaria exceção no meio
+    da montagem do template.
+
+    O resumo do que foi apagado não é enfeite: é como o dono de uma conta
+    comprometida descobre o tamanho do estrago. Só CONTAGENS, nunca conteúdo —
+    o corpo de um registro nunca sai por e-mail (RS05), e menos ainda num aviso
+    que a pessoa talvez não tenha pedido.
+    """
+    contexto = {"nome": nome, "email": email, "quando": quando, **resumo}
+
+    return EmailMessage(
+        subject="Sua conta no remind-task foi excluída",
+        body=render_to_string("accounts/conta_excluida.txt", contexto),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[email],
+    )
+
+
+def enviar_exclusao(email: str, nome: str, quando, resumo: dict) -> None:
+    """
+    Entrega o aviso.
+
+    `fail_silently=True` como no de recuperação, por um motivo diferente: aqui a
+    conta JÁ FOI apagada quando o envio acontece. Deixar a exceção do SMTP subir
+    não desfaria nada — só transformaria uma exclusão bem-sucedida em 500 na
+    tela de quem a pediu, sugerindo que ela falhou. O erro vai para o log.
+    """
+    montar_exclusao(email, nome, quando, resumo).send(fail_silently=True)

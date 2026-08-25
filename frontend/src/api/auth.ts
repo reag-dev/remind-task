@@ -72,3 +72,17 @@ export function pedirRecuperacao(email: string): Promise<void> {
 export function redefinirSenha(dados: DadosDeRedefinicao): Promise<void> {
   return request<void>("/auth/password-reset/confirm/", { method: "POST", body: dados });
 }
+
+/**
+ * Exclui a própria conta. Irreversível.
+ *
+ * A senha atual vai no corpo mesmo com o usuário autenticado, e o `DELETE`
+ * carrega corpo por isso — é incomum, mas legal, e a alternativa (um
+ * `POST /auth/me/delete/`) inventaria uma rota para não usar o verbo certo.
+ *
+ * O backend apaga em cascata tabelas, registros, regras e alertas, coloca os
+ * refresh em aberto na blacklist e responde 204 já limpando o cookie.
+ */
+export function excluirConta(password: string): Promise<void> {
+  return request<void>("/auth/me/", { method: "DELETE", body: { password } });
+}

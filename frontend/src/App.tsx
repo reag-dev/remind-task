@@ -11,6 +11,7 @@ import { RedefinirSenha } from "./routes/RedefinirSenha.tsx";
 import { Registro } from "./routes/Registro.tsx";
 import { RotaProtegida } from "./routes/RotaProtegida.tsx";
 import { Alertas } from "./routes/Alertas.tsx";
+import { Conta } from "./routes/Conta.tsx";
 import { TabelaColunas } from "./routes/TabelaColunas.tsx";
 import { TabelaRegras } from "./routes/TabelaRegras.tsx";
 import { TabelaRegistros } from "./routes/TabelaRegistros.tsx";
@@ -40,6 +41,7 @@ export function App() {
                 <Route path="/tabelas/:id/colunas" element={<TabelaColunas />} />
                 <Route path="/tabelas/:id/alertas" element={<TabelaRegras />} />
                 <Route path="/alertas" element={<Alertas />} />
+                <Route path="/conta" element={<Conta />} />
               </Route>
             </Route>
           </Routes>

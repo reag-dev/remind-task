@@ -152,3 +152,35 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
         attrs["user"] = user
         return attrs
+
+
+class AccountDeleteSerializer(serializers.Serializer):
+    """
+    Exclusão de conta: exige a senha atual, mesmo com o usuário já autenticado.
+
+    Não é redundância. O access token vale 15 minutos e viaja no cabeçalho de
+    toda requisição; um token roubado já dá acesso de leitura e escrita, e isso
+    é ruim — mas recuperável, porque o dono troca a senha e o RS07 corta as
+    sessões. Apagar a conta **não é recuperável**: o cascade leva tabelas,
+    registros, regras e alertas, e não há lixeira. Pedir a prova de novo é o que
+    separa "roubaram meu token" de "perdi tudo".
+
+    É também o padrão que a Phase 10 estabeleceu do outro lado do fluxo — lá o
+    token do e-mail prova a posse da caixa; aqui a senha prova a posse da conta.
+    """
+
+    password = serializers.CharField(
+        write_only=True,
+        style={"input_type": "password"},
+        trim_whitespace=False,
+    )
+
+    def validate_password(self, value: str) -> str:
+        # `self.context["user"]` e não `request.user`: o serializer é usado por
+        # uma view que já resolveu de quem é a conta, e depender do request aqui
+        # tornaria o objeto intestável fora de uma requisição.
+        if not self.context["user"].check_password(value):
+            # Mensagem no campo, não em `non_field_errors` — mesmo motivo do
+            # `RegisterSerializer`: o cliente precisa saber o que corrigir.
+            raise serializers.ValidationError("Senha incorreta.")
+        return value

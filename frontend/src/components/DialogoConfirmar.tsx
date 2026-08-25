@@ -5,6 +5,17 @@ type Props = {
   children: React.ReactNode;
   rotuloConfirmar: string;
   confirmando?: boolean;
+  /**
+   * Trava do botão de confirmar por uma condição do chamador.
+   *
+   * Separado de `confirmando` de propósito: os dois desabilitam o botão, mas
+   * dizem coisas diferentes — `confirmando` troca o rótulo para "Excluindo…"
+   * porque a ação está em curso, enquanto isto aqui significa "ainda não pode".
+   * Reusar um pelo outro faria a tela anunciar uma exclusão que não começou.
+   *
+   * Nasceu da confirmação por digitação do e-mail (Phase 11).
+   */
+  confirmarDesabilitado?: boolean;
   onConfirmar: () => void;
   onCancelar: () => void;
 };
@@ -22,6 +33,7 @@ export function DialogoConfirmar({
   children,
   rotuloConfirmar,
   confirmando = false,
+  confirmarDesabilitado = false,
   onConfirmar,
   onCancelar,
 }: Props) {
@@ -54,7 +66,7 @@ export function DialogoConfirmar({
           type="button"
           className="destrutivo"
           onClick={onConfirmar}
-          disabled={confirmando}
+          disabled={confirmando || confirmarDesabilitado}
         >
           {confirmando ? "Excluindo…" : rotuloConfirmar}
         </button>
