@@ -1,5 +1,15 @@
 # Runtime deps — remind-task
-# Faixas compatíveis em vez de pin exato: lockfile entra quando o projeto estabilizar.
+#
+# Este arquivo declara INTENÇÃO: faixas compatíveis, escritas à mão, revisáveis.
+# Quem instala não é ele — é `base.lock`, gerado a partir daqui com versão exata
+# e hash de cada artefato, transitivas incluídas.
+#
+# Editou algo aqui? Regenere o lock, senão o CI reprova:
+#
+#     make locks
+#
+# (A nota anterior dizia "lockfile entra quando o projeto estabilizar". Entrou
+# em 2026-08-24, depois do primeiro deploy real.)
 
 Django>=5.1,<6.0
 djangorestframework>=3.15,<4.0

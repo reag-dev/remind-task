@@ -1,4 +1,4 @@
-.PHONY: up down build logs sh migrate makemigrations test cov lint lint-fix seed superuser shell reset front-test front-cov front-lint front-sh front-types
+.PHONY: locks locks-check up down build logs sh migrate makemigrations test cov lint lint-fix seed superuser shell reset front-test front-cov front-lint front-sh front-types
 
 up:            ## sobe a stack completa
 	docker compose up -d
@@ -70,3 +70,45 @@ front-sh:
 # este alvo produzir mudança, ela precisa ser commitada.
 front-types:    ## regenera os tipos do cliente a partir do schema da API
 	docker compose run --rm frontend npm run api:types
+
+locks:          ## regenera requirements/*.lock a partir dos .txt
+	@# Dentro do container, e nao na maquina: o lock carrega hashes dos
+	@# artefatos resolvidos para ESTE Python e ESTA plataforma. Gerar no
+	@# Windows produziria um lock que nao instala na imagem Linux.
+	docker compose exec -T web sh -c "\
+		pip install --quiet --root-user-action=ignore pip-tools && \
+		pip-compile --quiet --generate-hashes --strip-extras \
+			--output-file=requirements/base.lock requirements/base.txt && \
+		pip-compile --quiet --generate-hashes --strip-extras \
+			--constraint=requirements/base.lock \
+			--output-file=requirements/dev.lock requirements/dev.txt"
+	@echo "locks regenerados — revise o diff antes de commitar"
+
+locks-check:    ## falha se os locks estiverem dessincronizados dos .txt
+	@# O mesmo que o CI faz. Recompila para um temporario e compara os PINS —
+	@# `nome==versao`, ignorando hashes e comentarios. Duas razoes:
+	@#
+	@# 1. `--generate-hashes` BAIXA todo artefato resolvido para calcular o
+	@#    hash. Sao ~4 minutos e uma dependencia de rede por execucao do
+	@#    check, contra ~10 segundos sem. Um check que expira por timeout de
+	@#    download reprova PR que nao tem nada de errado.
+	@# 2. Aqui a pergunta e "o lock reflete o .txt?", e isso esta nos pins.
+	@#    A integridade dos hashes ja e cobrada onde importa: o `pip install
+	@#    --require-hashes` do Dockerfile recusa artefato que nao case.
+	@#
+	@# Sem `diff <(...)`: o shell do container e `dash`, e substituicao de
+	@# processo e bashismo — falharia com "Syntax error: redirection
+	@# unexpected", que nao tem nada a ver com o lock.
+	docker compose exec -T web sh -c "\
+		pip install --quiet --root-user-action=ignore pip-tools && \
+		pip-compile --quiet --strip-extras \
+			--output-file=/tmp/base.check requirements/base.txt && \
+		pip-compile --quiet --strip-extras \
+			--constraint=requirements/base.lock \
+			--output-file=/tmp/dev.check requirements/dev.txt && \
+		for n in base dev; do \
+			grep -oE '^[A-Za-z0-9_.-]+==[^ ]+' requirements/\$$n.lock | sort > /tmp/\$$n.commitado; \
+			grep -oE '^[A-Za-z0-9_.-]+==[^ ]+' /tmp/\$$n.check | sort > /tmp/\$$n.recompilado; \
+			diff -u /tmp/\$$n.commitado /tmp/\$$n.recompilado || exit 1; \
+		done && \
+		echo 'locks em dia'"

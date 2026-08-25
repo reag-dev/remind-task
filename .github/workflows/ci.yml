@@ -37,6 +37,22 @@ jobs:
       - name: Subir a stack
         run: docker compose up -d --wait db redis web
 
+      # Os `.txt` declaram intenção; os `.lock` declaram o que será instalado.
+      # Editar um sem regenerar o outro faz a imagem instalar algo diferente do
+      # que se pediu — e, como o Dockerfile usa `--require-hashes`, o build
+      # quebraria só lá na frente, com uma mensagem sobre hash em vez de sobre
+      # a dependência que alguém acrescentou.
+      #
+      # A receita é a do `make locks-check`, e não uma cópia dela aqui: duas
+      # versões do mesmo comando divergem em silêncio, e a que decide o merge
+      # seria a que ninguém roda na máquina. Só a anotação de erro é daqui.
+      - name: Os locks estão em dia com os .txt
+        run: |
+          make locks-check || {
+            echo "::error::requirements/*.lock dessincronizado — rode 'make locks' e commite o resultado"
+            exit 1
+          }
+
       - name: Lint
         run: docker compose exec -T web ruff check .
 
@@ -103,11 +119,11 @@ jobs:
       - name: Subir banco e cache
         run: docker compose up -d --wait db redis
 
-      # `REQUIREMENTS=base.txt` é o ponto: a imagem de produção não leva pytest,
+      # `REQUIREMENTS=base.lock` é o ponto: a imagem de produção não leva pytest,
       # ruff nem factory-boy. Se algum código de aplicação importar algo que só
       # existe em dev.txt, o build ou o boot quebram aqui.
       - name: Construir a imagem do backend
-        run: docker build --build-arg REQUIREMENTS=base.txt -t rt-api:prod .
+        run: docker build --build-arg REQUIREMENTS=base.lock -t rt-api:prod .
 
       # O entrypoint de verdade: migrate e depois `exec gunicorn` na $PORT.
       # `--network host` para alcançar o Postgres publicado pelo compose.

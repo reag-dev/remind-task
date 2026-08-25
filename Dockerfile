@@ -27,13 +27,34 @@ RUN apt-get update \
 COPY docker/certs/ /usr/local/share/ca-certificates/
 RUN update-ca-certificates
 
-# dev.txt por padrao para o compose (a suite roda dentro do container); a
-# imagem de producao passa `--build-arg REQUIREMENTS=base.txt` e nao carrega
+# `.lock`, e nao `.txt`. Os `.txt` declaram INTENCAO (faixas compativeis); os
+# `.lock` declaram o que sera instalado — versao exata e hash de cada artefato,
+# incluindo as dependencias transitivas que ninguem escreveu a mao.
+#
+# Sem isto, a mesma imagem construida em duas datas instala arvores diferentes:
+# um release transitivo entra sozinho no proximo deploy, e a unica pista e a
+# aplicacao passar a se comportar de outro jeito. E a mesma classe de problema
+# que a porta e o healthcheck desta implantacao ja custaram — entrada que varia
+# em silencio entre execucoes.
+#
+# dev.lock por padrao para o compose (a suite roda dentro do container); a
+# imagem de producao passa `--build-arg REQUIREMENTS=base.lock` e nao carrega
 # pytest, ruff nem factory-boy.
-ARG REQUIREMENTS=dev.txt
+ARG REQUIREMENTS=dev.lock
 
 COPY requirements/ requirements/
-RUN pip install --upgrade pip && pip install -r "requirements/${REQUIREMENTS}"
+
+# `--require-hashes` e o que torna o lock uma GARANTIA em vez de uma sugestao:
+# pip recusa qualquer pacote cujo artefato nao case com o hash declarado, e
+# recusa tambem qualquer requisito sem pin exato. Um lock desatualizado quebra o
+# build aqui, alto, em vez de instalar outra coisa em silencio.
+#
+# O que ISTO NAO cobre, e vale saber: a tag `python:3.12-slim` e os pacotes apt
+# acima continuam moveis. Reproducibilidade total exigiria pinar a imagem base
+# por digest, ao custo de nunca receber correcao de seguranca sem alguem
+# lembrar de bumpar. A troca foi feita de olho aberto.
+RUN pip install --upgrade pip \
+    && pip install --require-hashes -r "requirements/${REQUIREMENTS}"
 
 COPY . .
 

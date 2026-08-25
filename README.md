@@ -67,6 +67,8 @@ demonstração.
 | `make front-cov` | suíte + gate de cobertura em 85% ([`vitest.config.ts`](frontend/vitest.config.ts)) |
 | `make front-lint` | `eslint` + `tsc --noEmit` |
 | `make front-types` | regenera [`schema.d.ts`](frontend/src/api/schema.d.ts) a partir do OpenAPI no ar |
+| `make locks` | regenera [`requirements/*.lock`](requirements/) a partir dos `.txt` |
+| `make locks-check` | falha se os `.lock` estiverem dessincronizados — o mesmo que o CI faz |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
 
@@ -74,6 +76,47 @@ O `ruff.toml` existe porque, sem arquivo de configuração, o ruff aplica o
 conjunto de regras padrão da **versão instalada** — que muda entre releases. O
 mesmo código passava numa máquina e acusava 165 erros na outra. As regras estão
 declaradas, e o repositório passa limpo.
+
+### Dependências: o `.txt` declara, o `.lock` instala
+
+Mesmo problema do `ruff.toml`, uma camada abaixo. Os arquivos em
+[`requirements/`](requirements/) vêm em dois formatos, e a diferença é quem
+manda:
+
+| Arquivo | Papel |
+|---|---|
+| `base.txt` / `dev.txt` | **intenção** — faixas compatíveis, escritas à mão, revisáveis |
+| `base.lock` / `dev.lock` | **o que é instalado** — versão exata e hash de cada artefato, transitivas incluídas |
+
+O `Dockerfile` instala do `.lock`, com `pip install --require-hashes`: o pip
+recusa qualquer artefato cujo hash não bata e qualquer requisito sem pin exato.
+Sem isso, a mesma imagem construída em duas datas instala árvores diferentes —
+um release transitivo entra sozinho no próximo deploy, e a única pista é a
+aplicação passar a se comportar de outro jeito.
+
+Acrescentou ou mexeu numa dependência? Edite o `.txt` e regenere:
+
+```bash
+make locks     # roda pip-compile dentro do container
+```
+
+**Dentro do container, não na máquina**: o lock carrega os hashes dos artefatos
+resolvidos para *este* Python e *esta* plataforma. Gerar no Windows produziria
+um lock que não instala na imagem Linux.
+
+`make locks-check` — e o CI — recompila e compara os **pins** (`nome==versão`,
+transitivas incluídas), não os hashes. O motivo é medido: `--generate-hashes`
+baixa todo artefato resolvido só para calcular o hash, o que levou ~4 minutos e
+chegou a expirar por timeout de rede com os locks perfeitamente em dia — um
+check que reprova PR correto ensina a ignorar o vermelho. Sem hashes a mesma
+verificação leva ~11 s, e a integridade dos artefatos continua cobrada onde tem
+efeito: no `--require-hashes` do build. Lock desatualizado vira build vermelho
+no PR que causou a divergência, não uma surpresa no deploy.
+
+O que isto **não** cobre: a tag `python:3.12-slim` e os pacotes `apt` do
+`Dockerfile` continuam móveis. Reprodutibilidade total exigiria pinar a imagem
+base por digest, ao custo de nunca receber correção de segurança sem alguém
+lembrar de bumpar. A troca foi feita de olho aberto.
 
 ### Build falhando com `CERTIFICATE_VERIFY_FAILED`
 
@@ -269,7 +312,7 @@ e aceita o cookie normalmente.
 
 | Job | O que roda |
 |---|---|
-| `backend` | `ruff check` + `pytest --cov` (gate de 85% do `.coveragerc`) |
+| `backend` | verificação dos locks + `ruff check` + `pytest --cov` (gate de 85% do `.coveragerc`) |
 | `frontend` | `typecheck` + `lint` + `test --coverage` |
 | `contrato` | regenera `schema.d.ts` do OpenAPI no ar e **exige diff vazio** |
 
@@ -285,6 +328,13 @@ acordo. Um serializer muda, o arquivo gerado fica velho, o TypeScript segue
 compilando contra o contrato **antigo**, e o erro só aparece como campo
 `undefined` em runtime. Regerar e exigir diff vazio transforma isso em build
 vermelho no PR que causou a divergência.
+
+A verificação dos locks segue o mesmo princípio, do lado das dependências:
+recompila os `.txt` **dentro do container** e exige que os pins batam com os
+`.lock` commitados. Roda o `make locks-check` — a mesma receita que existe na
+máquina — em vez de uma cópia do comando escrita no workflow: duas versões do
+mesmo script divergem em silêncio, e a que decide o merge seria justamente a que
+ninguém roda localmente.
 
 Os dois jobs que sobem a stack fazem `cp .env.example .env` — o que também
 **valida o exemplo**: variável nova nas settings sem linha correspondente no
