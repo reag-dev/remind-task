@@ -679,7 +679,7 @@ receber correção de segurança sem alguém lembrar de bumpar.
 
 ---
 
-### Phase 8 — Backup e restore 🟡 em andamento (2026-08-25)
+### Phase 8 — Backup e restore 🟢 concluída 2026-08-25
 
 **Objective:** provar o **restore**, não só agendar o dump. Backup não testado é
 suposição.
@@ -731,15 +731,31 @@ sh docker/backup.sh                                  # ✅ 15 kB, marcador final
 sh docker/restore.sh --ensaio                        # ✅ rc=0, contagens acima
 sh docker/restore.sh backups/x.sql.gz                # ✅ recusa sem CONFIRMA=sim
 CONFIRMA=sim DATABASE_URL=... sh docker/restore.sh   # ✅ recusa alvo remoto
-CONFIRMA=sim make restore BACKUP=backups/x.sql.gz    # ⏳ pendente — ver abaixo
+CONFIRMA=sim make restore BACKUP=backups/x.sql.gz    # ✅ 8 → 5 registros, rc=0
 ```
 
-**Pendente:** o caminho destrutivo (`make restore`) ainda não foi exercitado
-ponta a ponta — apaga o banco de desenvolvimento, e a execução foi barrada por
-falta de permissão na sessão. O que ele tem de próprio em relação ao ensaio:
-parar `web`/`worker`/`beat`, encerrar conexões abertas, `DROP`/`CREATE DATABASE`
-e subir o `web` de volta. As guardas (sem `CONFIRMA`, com `DATABASE_URL`,
-arquivo inexistente) já foram testadas e recusam corretamente.
+**O caminho destrutivo, exercitado (2026-08-25).** Com marcador plantado para o
+restore não poder passar por no-op: 3 linhas inseridas em `records` (5 → 8),
+restore do backup anterior, e **8 → 5** de volta. `rc=0`.
+
+E a prova que importa não é a contagem, é a aplicação funcionar depois — os
+grants do `remind_app` são o que o restore ingênuo perdia:
+
+```
+login: ok
+tables: 1 — ['Contratos']
+registros da tabela: 3 lidos sob RLS pelo papel remind_app
+alertas: 2
+```
+
+(3 e não 5 porque a leitura é do usuário demo — a RLS isolando, como deve.)
+
+Único ajuste que a execução revelou: o `GRANT` de membership imprimia
+`NOTICE: role "remind" has already been granted membership...` num banco que já
+tinha o papel. Inofensivo e ruidoso — e ruído num script de desastre é pior que
+ruído, porque quem lê a saída às três da manhã não deveria precisar decidir se
+aquilo era um erro. `SET client_min_messages = warning` resolveu; restore e
+ensaio rodados de novo, os dois limpos.
 
 ---
 

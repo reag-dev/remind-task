@@ -32,6 +32,10 @@ set -eu
 # O DDL é o mesmo da migration `core/0001_rls_policies` — de propósito. Os
 # GRANTs em tabela não são repetidos aqui: esses o dump tem.
 PAPEL_SQL='
+-- O GRANT de membership e idempotente, e num banco que ja tem o papel ele
+-- imprime NOTICE. Ruido num script de desastre e pior que ruido: quem le a
+-- saida as tres da manha nao deveria precisar decidir se aquilo era um erro.
+SET client_min_messages = warning;
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '"'"'remind_app'"'"') THEN
