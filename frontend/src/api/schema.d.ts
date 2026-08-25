@@ -143,6 +143,46 @@ export interface paths {
     patch: operations["auth_me_partial_update"];
     trace?: never;
   };
+  "/api/auth/password-reset/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pede o link de redefinição de senha
+     * @description Sempre 204, exista ou não a conta. A resposta é idêntica nos dois casos de propósito — ver a nota na view.
+     */
+    post: operations["auth_password_reset_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/auth/password-reset/confirm/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Redefine a senha com o token do e-mail
+     * @description Consome o link. Em caso de sucesso, TODAS as sessões em aberto são encerradas e o bloqueio do django-axes é limpo.
+     */
+    post: operations["auth_password_reset_confirm_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/auth/refresh/": {
     parameters: {
       query?: never;
@@ -188,10 +228,30 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Health check
-     * @description Retorna 200 se a aplicação alcança o banco; 503 caso contrário.
+     * Liveness
+     * @description 200 se o processo está de pé e alcança o banco; 503 caso contrário. É este que a plataforma consulta — de propósito **não** olha o Redis.
      */
     get: operations["health_retrieve"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/health/ready/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Readiness
+     * @description Estado das dependências — banco e Redis. 503 se qualquer uma estiver fora. Endpoint de observação: a plataforma **não** o consulta.
+     */
+    get: operations["health_ready_retrieve"];
     put?: never;
     post?: never;
     delete?: never;
@@ -564,6 +624,28 @@ export interface components {
        */
       previous?: string | null;
       results: components["schemas"]["Table"][];
+    };
+    /**
+     * @description Consome o link: `uid` + `token` + senha nova.
+     *
+     *     Nada de token próprio, tabela de pedidos ou coluna nova. O
+     *     `PasswordResetTokenGenerator` do Django deriva o hash a partir da senha
+     *     ATUAL e do `last_login` do usuário — então trocar a senha invalida o token
+     *     sozinho, e não existe estado para expurgar. Um token caseiro aqui seria
+     *     refazer, pior, o que o framework já faz.
+     */
+    PasswordResetConfirm: {
+      uid: string;
+      token: string;
+      password: string;
+    };
+    /**
+     * @description Só o endereço. O que se faz com ele é decisão da view — e a decisão é a
+     *     mesma, exista ou não a conta.
+     */
+    PasswordResetRequest: {
+      /** Format: email */
+      email: string;
     };
     PatchedAlertRule: {
       /** Format: uuid */
@@ -974,6 +1056,61 @@ export interface operations {
       };
     };
   };
+  auth_password_reset_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordResetRequest"];
+        "application/x-www-form-urlencoded": components["schemas"]["PasswordResetRequest"];
+        "multipart/form-data": components["schemas"]["PasswordResetRequest"];
+      };
+    };
+    responses: {
+      /** @description Pedido recebido. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  auth_password_reset_confirm_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordResetConfirm"];
+        "application/x-www-form-urlencoded": components["schemas"]["PasswordResetConfirm"];
+        "multipart/form-data": components["schemas"]["PasswordResetConfirm"];
+      };
+    };
+    responses: {
+      /** @description Senha redefinida. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Link inválido ou senha recusada. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   auth_refresh_create: {
     parameters: {
       query?: never;
@@ -1019,6 +1156,37 @@ export interface operations {
     };
   };
   health_retrieve: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            [key: string]: unknown;
+          };
+        };
+      };
+    };
+  };
+  health_ready_retrieve: {
     parameters: {
       query?: never;
       header?: never;

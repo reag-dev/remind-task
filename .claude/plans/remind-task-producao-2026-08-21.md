@@ -858,54 +858,80 @@ a isenção, a 61ª seria 429.
 
 ---
 
-### Phase 10 — Recuperação de senha por e-mail
+### Phase 10 — Recuperação de senha por e-mail 🟢 concluída 2026-08-25
 
 **Depende da Phase 5** (backend de e-mail configurado).
 
 **Objective:** quem esqueceu a senha volta a entrar, sem que o fluxo vire um
 oráculo de quais e-mails têm conta.
 
-- Dois endpoints: pedir o link e consumir o token.
-- **Token do `PasswordResetTokenGenerator` do Django**, não um token próprio. Ele
-  deriva o hash da senha atual e do `last_login`, então **usar uma vez o
-  invalida** — sem tabela nova, sem coluna nova, sem rotina de expurgo. Escrever
-  um token próprio aqui seria refazer, pior, o que a stdlib do framework já faz.
-- **A resposta é idêntica exista ou não a conta.** Sempre 204, sempre a mesma
-  mensagem na tela. Um 404 para e-mail desconhecido transformaria o endpoint em
-  verificador de cadastro — o mesmo raciocínio do RS04, que devolve 404 em vez
-  de 403 para não confirmar que um recurso existe. Teste comparando as duas
-  respostas byte a byte.
-- **O link aponta para o frontend**, não para a API: `FRONTEND_URL` entra como
-  variável de ambiente (`/redefinir-senha?uid=…&token=…`), porque quem renderiza
-  o formulário é a SPA.
-- **Redefinir invalida todas as sessões**: blacklist dos refresh tokens em
-  aberto. Sem isso, quem roubou um refresh continua dentro por 7 dias
-  **justamente depois** de a vítima trocar a senha por suspeitar do roubo.
-  É o RS07 aplicado ao caso em que ele mais importa.
-- **Limpar o bloqueio do django-axes** ao redefinir com sucesso: quem esqueceu a
-  senha erra várias vezes antes de pedir o link, e chegaria ao fim do fluxo
-  ainda travado, sem entender por quê.
-- Throttling apertado nos dois endpoints (Phase 4): é vetor de spam para caixas
-  de terceiros.
-- A senha nova passa pelos mesmos validadores do registro.
-
-**Files Touched:**
+**Files Touched (o que o plano previa, mais três):**
 `accounts/views.py` · `accounts/serializers.py` · `accounts/urls.py` ·
-`config/settings/base.py` ·
+`accounts/emails.py` (novo — não previsto) ·
 `accounts/templates/accounts/redefinir_senha.txt` (novo) ·
-`accounts/tests/test_password_reset.py` (novo) ·
+`config/settings/base.py` · `core/throttling.py` (não previsto) ·
+`.railway/railway.ts` (não previsto) · `.env.example` · `.env.prod.example` ·
+`README.md` · `accounts/tests/test_password_reset.py` (novo) ·
 `tests/security/test_user_enumeration.py` (novo) ·
-`frontend/src/routes/EsqueciSenha.tsx` (novo) ·
-`frontend/src/routes/RedefinirSenha.tsx` (novo) ·
-`frontend/src/routes/Login.tsx` · `frontend/src/App.tsx` · `frontend/src/api/auth.ts`
+`tests/security/test_throttling.py` · `tests/security/test_auth_required.py` ·
+`frontend/src/routes/EsqueciSenha.tsx` + teste (novos) ·
+`frontend/src/routes/RedefinirSenha.tsx` + teste (novos) ·
+`frontend/src/routes/Login.tsx` · `frontend/src/App.tsx` ·
+`frontend/src/api/auth.ts` · `frontend/src/api/schema.d.ts` (regerado)
+
+Os três não previstos: `accounts/emails.py` (montar separado de enviar, como em
+`alerts/emails.py` — é o que permite testar o conteúdo sem transporte),
+`core/throttling.py` (o teto próprio precisa de uma classe) e
+`.railway/railway.ts` (ver o achado 3 abaixo).
+
+> **Três coisas que só apareceram implementando.**
+>
+> **1. O template escapava o `&` do link — e o teste pegou na primeira
+> execução.** Sem `{% autoescape off %}`, o Django transforma `&` em `&amp;` no
+> corpo `text/plain`. Não protege de nada ali, e QUEBRA o link: o frontend
+> receberia um parâmetro chamado `amp;token`, e o fluxo morreria na tela de
+> "link inválido" sem ninguém entender por quê. Coberto por
+> `test_o_link_nao_sai_com_html_escapado`.
+>
+> **2. Entrar invalida um link já pedido.** O token deriva do `last_login`, que
+> o login atualiza. Quem pede o link, lembra a senha, entra e só depois clica no
+> e-mail encontra "link inválido". É o comportamento do Django e é defensável —
+> a sessão nova prova que o dono já está dentro —, mas apareceu como um teste
+> vermelho cuja causa levou minutos para achar. Está registrado em
+> `test_entrar_invalida_um_link_ja_pedido` para não ser diagnosticado do zero
+> outra vez. Também reordenou o teste de blacklist: a sessão precisa existir
+> ANTES do pedido do link.
+>
+> **3. `FRONTEND_URL` faltava no `.railway/railway.ts`.** O default de `base.py`
+> é `http://localhost:3000` — e um default que FUNCIONA é pior que nenhum aqui:
+> o serviço sobe, o e-mail sai sem erro, e o usuário clica num link que não leva
+> a lugar nenhum. Sem log dizendo isso, porque o envio foi um sucesso.
+
+**Decisões que o plano pedia, e como ficaram:**
+
+- **Token do `PasswordResetTokenGenerator`**, não caseiro. Uso único de graça (o
+  hash deriva da senha atual), sem tabela, sem coluna, sem expurgo.
+- **Resposta idêntica exista ou não a conta** — 204 sempre, e as comparações de
+  `tests/security/test_user_enumeration.py` são **byte a byte**, não "os dois
+  são 204". Conta inativa também não se distingue de inexistente. O `enviar()`
+  usa `fail_silently=True` justamente por isso: deixar a exceção do SMTP subir
+  faria endereço-com-conta devolver 500 e endereço-sem-conta devolver 204.
+- **Limitação registrada em vez de escondida:** a simetria não cobre o TEMPO.
+  Endereço com conta paga um SMTP; sem conta responde na hora. Fechar exigiria
+  empurrar o envio para o Celery — trocando um oráculo de tempo por um modo de
+  falha silencioso (worker fora = ninguém recupera senha). A troca não vale, e
+  está escrita na view.
+- **Redefinir encerra todas as sessões** (blacklist dos refresh em aberto) e
+  **limpa o bloqueio do django-axes**.
+- **Teto próprio por IP** nos DOIS endpoints — o de consumir também, porque
+  adivinhar token exige repetição.
 
 **Verify:**
 ```bash
 docker compose exec -T web pytest accounts/tests/test_password_reset.py \
-  tests/security/test_user_enumeration.py -v
-# O token é de uso único e a sessão antiga morre:
-docker compose exec -T web pytest -k "reset_token_cannot_be_reused or reset_blacklists" -v
-cd frontend && npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha
+  tests/security/test_user_enumeration.py -q          # ✅ 14 + 4
+docker compose exec -T web pytest -k "reset_token_cannot_be_reused or reset_blacklists" -q
+npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha   # ✅ 9
 ```
 
 ---
