@@ -250,14 +250,25 @@ jobs:
       # O limite de taxa, exercitado na imagem de producao contra o Redis de
       # verdade. Anonimo e 60/hora por default; 70 requisicoes tem que esbarrar.
       #
-      # Se este passo passar a devolver 200 em todas, o provavel e o cache ter
-      # caido para LocMem (contador por worker) ou o fail-open estar mascarando
-      # uma queda do Redis — as duas coisas que fazem o teto existir so no papel.
+      # A sonda e `GET /api/auth/login/`, que responde 405 — e NAO o health, que
+      # esta isento do throttle desde a Phase 9 (ver a nota em `core/views.py`:
+      # um monitor batendo a cada 10s faz 360/hora e recebia 429, o que se le
+      # como "a aplicacao caiu" com ela de pe).
+      #
+      # Metodo nao permitido e a sonda anonima mais limpa que existe aqui: o DRF
+      # checa throttle em `initial()`, ANTES de resolver o handler do metodo,
+      # entao nao ha tentativa de autenticacao nem registro no django-axes.
+      #
+      # Se este passo passar a devolver so 405, o provavel e o cache ter caido
+      # para LocMem (contador por worker) ou o fail-open estar mascarando uma
+      # queda do Redis — as duas coisas que fazem o teto existir so no papel.
       - name: O limite de taxa vale de ponta a ponta
         run: |
           bateu429=nao
           for i in $(seq 1 70); do
-            codigo=$(curl -s -o /dev/null -w '%{http_code}'               -H 'X-Forwarded-Proto: https'               http://localhost:8000/api/health/)
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'X-Forwarded-Proto: https' \
+              http://localhost:8000/api/auth/login/)
             if [ "$codigo" = "429" ]; then
               echo "429 na requisicao $i — limite aplicado"
               bateu429=sim
@@ -269,6 +280,22 @@ jobs:
             docker logs rt-api | tail -30
             exit 1
           fi
+
+      # A contraprova da isencao: o health NAO pode esbarrar no teto, por mais
+      # que se bata nele. Sem este passo, alguem "conserta" o passo de cima
+      # voltando a sonda para o health e o 429 no monitor volta junto.
+      - name: O health continua fora do teto
+        run: |
+          for i in $(seq 1 80); do
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H 'X-Forwarded-Proto: https' \
+              http://localhost:8000/api/health/ready/)
+            if [ "$codigo" != "200" ]; then
+              echo "::error::/api/health/ready/ devolveu $codigo na requisicao $i — a isencao de throttle sumiu"
+              exit 1
+            fi
+          done
+          echo "80 requisicoes no health, nenhuma barrada"
 
       - name: Derrubar o backend
         run: docker rm -f rt-api
