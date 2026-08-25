@@ -679,7 +679,7 @@ receber correção de segurança sem alguém lembrar de bumpar.
 
 ---
 
-### Phase 8 — Backup e restore
+### Phase 8 — Backup e restore 🟡 em andamento (2026-08-25)
 
 **Objective:** provar o **restore**, não só agendar o dump. Backup não testado é
 suposição.
@@ -689,15 +689,57 @@ dentro do fornecedor não protege contra apagar a conta ou o serviço. Dump
 próprio, com retenção, e um restore exercitado.
 
 **Files Touched:**
-`docker/backup.sh` (novo) · `Makefile` · `README.md`
+`docker/backup.sh` (novo) · `docker/restore.sh` (novo) · `Makefile` ·
+`README.md` · `.gitignore`
+
+> **A suposição era falsa, e o ensaio pegou.** Restaurando o dump direto num
+> cluster limpo:
+>
+> ```
+> ERROR:  role "remind_app" does not exist
+> ```
+>
+> `pg_dump` de um BANCO não carrega objetos de CLUSTER. O dump traz os
+> `GRANT ... TO remind_app` (são do banco), mas não o `CREATE ROLE` nem o
+> `GRANT remind_app TO <dono>` — e o restore aborta na seção de privilégios
+> **depois** de já ter carregado tabelas e dados. Medido nesse estado:
+> `records=5`, `users=3`, **`grants para remind_app = 0`**.
+>
+> O banco parece restaurado e a aplicação não lê uma linha: quem executa
+> consulta de usuário é `remind_app` (RS01), e ele ficou sem privilégio nenhum.
+> Sem `ON_ERROR_STOP=1`, o `psql` teria saído com status 0 — um restore
+> "bem-sucedido" que só falha quando alguém tenta usar o sistema.
+>
+> `docker/restore.sh` cria o papel ANTES de carregar, com o mesmo DDL da
+> migration `core/0001_rls_policies`. Depois disso: 20 tabelas, 5 policies,
+> 80 grants, 3 users, 3 tables, 5 records, rc=0.
+
+**Duas decisões de desenho que vieram disso:**
+
+1. **`make restore-ensaio` é o alvo central**, não um extra. Sobe um Postgres
+   descartável, restaura o backup mais recente, conta o que voltou e destrói o
+   cluster — sem encostar no banco local. É o único jeito de o restore continuar
+   provado depois de hoje. O ensaio sobe o cluster **sem** o `init.sql` das
+   extensões de propósito: `citext` e `pgcrypto` têm que vir do dump.
+2. **O dono do banco é lido do próprio arquivo** (`ALTER DEFAULT PRIVILEGES FOR
+   ROLE ...`), não do `.env`. No cenário que o ensaio simula — o fornecedor
+   sumiu — o dump é tudo o que restou.
 
 **Verify:**
 ```bash
-make backup
-make restore BACKUP=$(ls -t backups/*.sql.gz | head -1)
-docker compose exec -T web python manage.py shell -c \
-  "from records.models import Record; print('registros:', Record.objects.count())"
+sh docker/backup.sh                                  # ✅ 15 kB, marcador final conferido
+sh docker/restore.sh --ensaio                        # ✅ rc=0, contagens acima
+sh docker/restore.sh backups/x.sql.gz                # ✅ recusa sem CONFIRMA=sim
+CONFIRMA=sim DATABASE_URL=... sh docker/restore.sh   # ✅ recusa alvo remoto
+CONFIRMA=sim make restore BACKUP=backups/x.sql.gz    # ⏳ pendente — ver abaixo
 ```
+
+**Pendente:** o caminho destrutivo (`make restore`) ainda não foi exercitado
+ponta a ponta — apaga o banco de desenvolvimento, e a execução foi barrada por
+falta de permissão na sessão. O que ele tem de próprio em relação ao ensaio:
+parar `web`/`worker`/`beat`, encerrar conexões abertas, `DROP`/`CREATE DATABASE`
+e subir o `web` de volta. As guardas (sem `CONFIRMA`, com `DATABASE_URL`,
+arquivo inexistente) já foram testadas e recusam corretamente.
 
 ---
 

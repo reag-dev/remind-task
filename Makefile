@@ -1,4 +1,4 @@
-.PHONY: locks locks-check up down build logs sh migrate makemigrations test cov lint lint-fix seed superuser shell reset front-test front-cov front-lint front-sh front-types
+.PHONY: backup restore restore-ensaio locks locks-check up down build logs sh migrate makemigrations test cov lint lint-fix seed superuser shell reset front-test front-cov front-lint front-sh front-types
 
 up:            ## sobe a stack completa
 	docker compose up -d
@@ -112,3 +112,19 @@ locks-check:    ## falha se os locks estiverem dessincronizados dos .txt
 			diff -u /tmp/\$$n.commitado /tmp/\$$n.recompilado || exit 1; \
 		done && \
 		echo 'locks em dia'"
+
+backup:         ## dump do Postgres em backups/, com retenção (RETENCAO=7)
+	sh docker/backup.sh
+
+restore-ensaio: ## restaura o backup mais recente num Postgres descartável e confere
+	@# O alvo que dá sentido ao backup. Não encosta no banco local: sobe um
+	@# cluster limpo, restaura, conta o que voltou e destrói o cluster.
+	sh docker/restore.sh --ensaio
+
+restore:        ## APAGA o banco local e o restaura de um backup — BACKUP=arquivo
+	@test -n "$(BACKUP)" || { \
+		echo "uso: CONFIRMA=sim make restore BACKUP=backups/remind-....sql.gz"; \
+		echo "     (para só conferir que o backup presta: make restore-ensaio)"; \
+		exit 1; \
+	}
+	sh docker/restore.sh "$(BACKUP)"

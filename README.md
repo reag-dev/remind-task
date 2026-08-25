@@ -69,6 +69,8 @@ demonstração.
 | `make front-types` | regenera [`schema.d.ts`](frontend/src/api/schema.d.ts) a partir do OpenAPI no ar |
 | `make locks` | regenera [`requirements/*.lock`](requirements/) a partir dos `.txt` |
 | `make locks-check` | falha se os `.lock` estiverem dessincronizados — o mesmo que o CI faz |
+| `make backup` | dump do banco em `backups/`, com retenção — ver [Backup e restore](#backup-e-restore) |
+| `make restore-ensaio` | prova que o backup restaura, num Postgres descartável |
 
 Sem `make` no Windows: use `docker compose exec web <comando>` direto.
 
@@ -302,6 +304,88 @@ minutos e o usuario cai no login. Entao o roteiro de aceite e:
 
 Nenhum teste automatizado pega isso, porque o servidor de teste nao e um browser
 e aceita o cookie normalmente.
+
+---
+
+## Backup e restore
+
+O Railway tira snapshot do Postgres gerenciado, e isso cobre perda de disco —
+não perder a **conta**. Apagar o projeto, atrasar a fatura ou o fornecedor
+encerrar o serviço leva banco e snapshots juntos. Por isso existe um dump que
+sai da fronteira do fornecedor.
+
+```bash
+make backup            # dump em backups/, com retenção (padrão: 7 arquivos)
+make restore-ensaio    # prova que o backup restaura — sem tocar no banco local
+```
+
+| Comando | O que faz |
+|---|---|
+| `make backup` | `pg_dump` do banco do compose para `backups/remind-<carimbo>.sql.gz`. `DATABASE_URL=... make backup` aponta para o banco remoto |
+| `make restore-ensaio` | sobe um Postgres **descartável**, restaura o backup mais recente ali, conta o que voltou e destrói o cluster |
+| `CONFIRMA=sim make restore BACKUP=<arquivo>` | **APAGA o banco local** e o recria a partir do arquivo |
+
+`backups/` está no `.gitignore`: são dados reais de usuário, e o RS05 não para
+na fronteira do git. O que é versionado é o script que os gera.
+
+### O ensaio é a parte que importa
+
+Backup que nunca foi restaurado é suposição. E a suposição, aqui, era falsa —
+medido em cluster limpo, restaurando o dump direto:
+
+```
+ERROR:  role "remind_app" does not exist
+```
+
+**`pg_dump` de um banco não carrega objetos de cluster.** Papéis e memberships
+ficam de fora; o dump traz os `GRANT ... TO remind_app` (esses são do banco), mas
+não o `CREATE ROLE` nem o `GRANT remind_app TO <dono>`. O restore aborta na seção
+de privilégios — **depois** de já ter carregado tabelas e dados:
+
+| Estado após restore ingênuo | |
+|---|---|
+| `records` | 5 ✅ |
+| `users` | 3 ✅ |
+| grants para `remind_app` | **0** ❌ |
+
+Ou seja: o banco *parece* restaurado, com todas as linhas no lugar, e a
+aplicação não lê uma única delas — porque quem executa consulta de usuário é o
+papel `remind_app` ([RS01](docs/especificacao.md), `core/rls.py`), e ele ficou
+sem privilégio nenhum. Sem `ON_ERROR_STOP=1` o `psql` ainda teria terminado com
+status 0.
+
+Por isso [`docker/restore.sh`](docker/restore.sh) cria o papel **antes** de
+carregar o dump, com o mesmo DDL da migration `core/0001_rls_policies`. Com ele:
+
+```
+tabelas.......... 20
+policies RLS..... 5
+grants remind_app 80
+users............ 3
+tables........... 3
+records.......... 5
+ensaio concluído sem erro — o backup restaura
+```
+
+O ensaio sobe o cluster **sem** o `init.sql` das extensões de propósito:
+`citext` e `pgcrypto` têm que vir do próprio dump. Se um dia não vierem, é no
+ensaio que se descobre, e não no dia do desastre. E o dono do banco é lido do
+**arquivo** (`ALTER DEFAULT PRIVILEGES FOR ROLE ...`), não do `.env` — no
+cenário simulado, o dump é tudo o que restou.
+
+### Restaurar produção
+
+Não há alvo para isso, e a ausência é deliberada: `docker/restore.sh` recusa
+rodar com `DATABASE_URL` definido. Derrubar o banco de produção pede mais
+cerimônia que uma variável de ambiente. O caminho é manual e consciente:
+
+```bash
+make backup                                   # antes de qualquer coisa
+gunzip -c backups/<arquivo>.sql.gz | psql "$DATABASE_URL" -v ON_ERROR_STOP=1
+```
+
+com o papel `remind_app` criado antes, como o script faz — o bloco SQL está em
+[`docker/restore.sh`](docker/restore.sh#L20-L50).
 
 ---
 
