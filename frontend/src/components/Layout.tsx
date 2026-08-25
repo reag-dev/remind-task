@@ -16,7 +16,12 @@ export function Layout() {
         <div className="cabecalho-direita">
           <BadgeAlertas />
           {estado.nome === "autenticado" && (
-            <span className="sutil">{estado.usuario.email}</span>
+            // O e-mail vira o link para a conta: é onde o usuário procura por
+            // "meus dados" antes de procurar um menu, e evita mais um item no
+            // cabeçalho para uma tela que se visita duas vezes por ano.
+            <Link to="/conta" className="sutil">
+              {estado.usuario.email}
+            </Link>
           )}
           <button type="button" className="secundario" onClick={() => void sair()}>
             Sair

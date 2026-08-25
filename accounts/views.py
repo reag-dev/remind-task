@@ -2,7 +2,9 @@ from contextlib import suppress
 
 from axes.utils import reset as axes_reset
 from django.contrib.auth import get_user_model
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from django.db import transaction
+from django.utils import timezone
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -21,6 +23,7 @@ from accounts.cookies import (
 )
 from accounts.serializers import (
     AccessTokenSerializer,
+    AccountDeleteSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -121,14 +124,75 @@ class LogoutView(APIView):
         return delete_refresh_cookie(response)
 
 
-@extend_schema(tags=["auth"], summary="Dados da conta autenticada")
-class MeView(generics.RetrieveUpdateAPIView):
+@extend_schema_view(
+    get=extend_schema(tags=["auth"], summary="Dados da conta autenticada"),
+    put=extend_schema(tags=["auth"], summary="Substitui os dados da conta"),
+    patch=extend_schema(tags=["auth"], summary="Atualiza os dados da conta"),
+    delete=extend_schema(
+        tags=["auth"],
+        summary="Exclui a própria conta (irreversível)",
+        description=(
+            "Exige a senha atual no corpo, mesmo autenticado. Apaga em cascata "
+            "tabelas, registros, regras e alertas, encerra todas as sessões e "
+            "envia um aviso por e-mail."
+        ),
+        request=AccountDeleteSerializer,
+        responses={
+            204: OpenApiResponse(description="Conta excluída."),
+            400: OpenApiResponse(description="Senha ausente ou incorreta."),
+        },
+    ),
+)
+class MeView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
 
     def get_object(self):
         # Nunca resolve por id vindo da URL — o recurso é sempre o requisitante.
         return self.request.user
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+
+        # A senha é conferida ANTES de qualquer efeito. Um `perform_destroy` que
+        # valida no meio deixaria a ordem depender de detalhe do DRF.
+        confirmacao = AccountDeleteSerializer(data=request.data, context={"user": user})
+        confirmacao.is_valid(raise_exception=True)
+
+        # Contado antes de apagar, por motivo óbvio, e é só CONTAGEM: o conteúdo
+        # de um registro nunca sai por e-mail (RS05).
+        resumo = {
+            "tabelas": user.tables.count(),
+            "registros": user.records.count(),
+            "regras": user.alert_rules.count(),
+            "alertas": user.alerts.count(),
+        }
+        email, nome, quando = user.email, user.get_short_name(), timezone.now()
+
+        # Antes do delete, e explicitamente: `OutstandingToken.user` é SET_NULL,
+        # não CASCADE. Sem isto os refresh tokens viram linhas órfãs com
+        # `user_id = NULL`, criptograficamente válidas até expirarem. Na prática
+        # o acesso já falharia (a busca do usuário pelo claim não acha ninguém),
+        # mas confiar nisso contraria o RS07 — que fez o logout usar blacklist
+        # justamente para "sair" significar alguma coisa em vez de depender do
+        # acaso. Depois do delete seria tarde: a linha some e com ela o vínculo.
+        _encerrar_sessoes(user)
+
+        user.delete()
+
+        # `on_commit` e não uma chamada direta: com ATOMIC_REQUESTS a exclusão só
+        # é definitiva no commit da request. Enviar antes deixaria a porta aberta
+        # para o pior aviso possível — "sua conta foi excluída" chegando a quem
+        # ainda tem conta, porque algo depois deu rollback.
+        transaction.on_commit(
+            lambda: emails.enviar_exclusao(email, nome, quando, resumo)
+        )
+
+        resposta = Response(status=status.HTTP_204_NO_CONTENT)
+        # O cookie de refresh não é mais válido (o token está na blacklist), mas
+        # deixá-lo no browser faria a SPA tentar renovar e receber 401 na cara do
+        # usuário logo depois de uma operação bem-sucedida.
+        return delete_refresh_cookie(resposta)
 
 
 @extend_schema(

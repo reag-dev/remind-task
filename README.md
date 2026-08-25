@@ -650,6 +650,7 @@ dois lados. `docker compose up -d` sobe tudo.
 | `POST` | `/api/auth/password-reset/` | Pede o link de recuperação — sempre 204 |
 | `POST` | `/api/auth/password-reset/confirm/` | Troca a senha com o token do e-mail |
 | `GET`/`PATCH` | `/api/auth/me/` | Conta autenticada (nome, fuso) |
+| `DELETE` | `/api/auth/me/` | Exclui a própria conta — exige a senha no corpo |
 | `GET`/`POST` | `/api/tables/` | Lista e cria tabelas (RF03, RF04) |
 | `GET`/`PATCH`/`DELETE` | `/api/tables/{id}/` | Detalhe com colunas embutidas |
 | `GET`/`POST` | `/api/tables/{id}/columns/` | Colunas da tabela (RF05, RF06) |
@@ -798,6 +799,7 @@ curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
 - **Row-Level Security no Postgres** como segunda barreira — detalhado abaixo.
 - **Log redigido na origem**: credenciais, JWTs, hashes de senha e o `data` inteiro dos registros são apagados por um `logging.Filter` antes de qualquer handler formatar a linha (`core/logging.py`) — **inclusive dentro do traceback**, que é por onde o Postgres devolve a linha inteira que violou uma constraint.
 - **Recuperação de senha não é oráculo de cadastro** — o pedido responde 204 exista ou não a conta, e a tela usa a mesma redação nos dois casos. Detalhado abaixo.
+- **Excluir a conta pede a senha de novo**, mesmo autenticado: um access token roubado dá acesso, e isso é recuperável; apagar a conta não é. E a tabela `users` ganhou policy de RLS na mesma phase — antes dela, a operação mais destrutiva do sistema era a única sem a segunda barreira.
 - **Headers de produção conferidos**: `python manage.py check --deploy --settings=config.settings.prod` passa sem nenhuma issue. `DJANGO_ALLOWED_HOSTS` vazio derruba o boot em vez de virar um 400 misterioso.
 
 ### Recuperação de senha
@@ -850,6 +852,41 @@ Os dois endpoints têm teto próprio por IP (`THROTTLE_PASSWORD_RESET`, 5/hour):
 cada chamada faz o servidor mandar e-mail para um endereço que **quem chama**
 escolhe.
 
+
+### Exclusão de conta
+
+```
+DELETE /api/auth/me/   {"password": "..."}   → 204
+```
+
+**A senha é exigida de novo, com o usuário já autenticado.** Não é redundância:
+o access token vale 15 minutos e viaja em toda requisição; um token roubado já
+dá leitura e escrita — ruim, mas **recuperável**, porque o dono troca a senha e
+o RS07 corta as sessões. Apagar a conta não é recuperável: o cascade leva
+tabelas, registros, regras e alertas, e não existe lixeira.
+
+Na tela, a confirmação é **digitar o próprio e-mail**, não um "tem certeza?".
+As duas travas protegem de coisas diferentes — o e-mail contra o clique no lugar
+errado, a senha contra outra pessoa.
+
+O que acontece, em ordem:
+
+1. a senha é conferida **antes de qualquer efeito**;
+2. as contagens do que será apagado são lidas (só contagens — o conteúdo de um
+   registro nunca sai por e-mail, RS05);
+3. os refresh em aberto vão para a **blacklist** — `OutstandingToken.user` é
+   `SET_NULL`, então sem isso eles virariam linhas órfãs válidas até expirar;
+4. o usuário é apagado, e o cascade leva o resto;
+5. no **commit** da transação, o aviso por e-mail sai. `on_commit` e não antes:
+   "sua conta foi excluída" chegando a quem ainda tem conta, porque algo deu
+   rollback depois, seria o pior aviso possível.
+
+**Policy de RLS em `users`** ([`core/migrations/0003_users_rls_policy.py`](core/migrations/0003_users_rls_policy.py))
+entrou junto. Ela não existia porque, enquanto nenhum endpoint apagava conta, a
+ausência era inofensiva. Não quebra o login — e o motivo é estrutural: o
+contexto de RLS é aberto nas classes de autenticação do DRF, então o SELECT do
+JWT roda **antes** dele, e login e registro nunca entram no papel `remind_app`.
+Coberto nos dois caminhos por `core/tests/test_rls.py`.
 
 ### Isolamento em duas camadas (RS01)
 

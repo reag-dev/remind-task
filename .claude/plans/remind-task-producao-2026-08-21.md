@@ -936,7 +936,23 @@ npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha   # ✅ 9
 
 ---
 
-### Phase 11 — Exclusão de conta
+### Phase 11 — Exclusão de conta 🟡 escrita em 2026-08-25, **nada executado**
+
+> ⚠️ **Estado honesto:** o código, os testes e a documentação estão escritos, e
+> **nenhuma linha foi executada** — o Docker desta máquina parou de responder no
+> meio da phase (`docker compose ps` retorna vazio com rc=0, o daemon derrubou a
+> stack sob carga). Nada aqui deve ser tratado como verificado até a suíte rodar.
+>
+> O item de maior risco é a **migration 0003**: RLS é DDL, e o raciocínio de que
+> ela não quebra o login está apoiado na leitura de `core/rls.py` (o contexto é
+> aberto nas classes de autenticação do DRF, depois do SELECT do JWT), não em
+> execução. `core/tests/test_rls.py` ganhou o teste que prova isso nos dois
+> caminhos — falta rodá-lo.
+>
+> Segundo item de risco: os testes usam `django_capture_on_commit_callbacks`
+> para o e-mail que sai no `on_commit`. Se a fixture não estiver disponível na
+> versão de pytest-django em uso, é ali que o vermelho aparece primeiro.
+
 
 **Depende da Phase 10** (compartilha o padrão de reautenticação) e da Phase 5
 (e-mail de confirmação).
@@ -965,25 +981,50 @@ verdade.
 - UI: confirmação por digitação do e-mail, não um "tem certeza?". O
   `DialogoConfirmar` já existe e é reusado.
 
-**Files Touched:**
-`accounts/views.py` · `accounts/serializers.py` ·
+**Files Touched (previstos, mais dois; um previsto não foi mexido):**
+`accounts/views.py` · `accounts/serializers.py` · `accounts/emails.py` ·
 `core/migrations/0003_users_rls_policy.py` (novo) ·
 `accounts/templates/accounts/conta_excluida.txt` (novo) ·
 `accounts/tests/test_account_deletion.py` (novo) ·
-`core/tests/test_rls.py` · `tests/security/test_cross_tenant.py` ·
-`frontend/src/routes/Conta.tsx` (novo) · `frontend/src/components/Layout.tsx` ·
-`frontend/src/App.tsx` · `frontend/src/api/auth.ts`
+`core/tests/test_rls.py` ·
+`frontend/src/routes/Conta.tsx` + teste (novos) ·
+`frontend/src/components/DialogoConfirmar.tsx` ·
+`frontend/src/components/Layout.tsx` · `frontend/src/App.tsx` ·
+`frontend/src/routes/Login.tsx` · `frontend/src/api/auth.ts` · `README.md`
 
-**Verify:**
+`DialogoConfirmar` ganhou um `confirmarDesabilitado` opcional — a confirmação
+por digitação do e-mail precisa travar o botão por uma condição do chamador, e
+reusar o `confirmando` para isso faria a tela anunciar "Excluindo…" antes de
+qualquer exclusão começar.
+
+**`tests/security/test_cross_tenant.py` não foi tocado, de propósito.** Ele
+cobre acesso a recurso alheio por id, e `DELETE /api/auth/me/` não aceita id
+nenhum — opera sempre sobre `request.user`. O ataque equivalente aqui é no nível
+do banco (um queryset que resolvesse o usuário pelo corpo), e é isso que
+`test_deleting_someone_elses_account_touches_nothing`, em `core/tests/test_rls.py`,
+exercita contra a policy nova.
+
+**Verify — a rodar assim que o Docker voltar, nesta ordem:**
 ```bash
-docker compose exec -T web pytest accounts/tests/test_account_deletion.py \
-  core/tests/test_rls.py tests/security/ -q
-# A policy nova não pode quebrar o login, que consulta `users` sem contexto:
-docker compose exec -T web pytest accounts/tests/test_auth.py -q
-# Apagar A não pode tocar em B:
+# 1. A migration aplica? É DDL, e é o maior risco desta phase.
+docker compose exec -T web python manage.py migrate
+
+# 2. A policy nova não pode quebrar o login, que consulta `users` sem contexto:
+docker compose exec -T web pytest accounts/tests/test_auth.py core/tests/test_rls.py -q
+
+# 3. O fluxo em si, e a contraprova do cascade:
+docker compose exec -T web pytest accounts/tests/test_account_deletion.py -q
 docker compose exec -T web pytest -k "deletion_leaves_other_user_intact" -v
-cd frontend && npm run test -- src/routes/Conta
+
+# 4. O resto, incluindo o job de alertas que faz JOIN em `users`:
+docker compose exec -T web pytest --cov
+npm run test -- src/routes/Conta
+npm run api:types   # o schema mudou: DELETE em /api/auth/me/
 ```
+
+⚠️ **O `schema.d.ts` precisa ser regerado também nesta phase** — o `DELETE`
+entrou no OpenAPI. É a mesma pegadinha que deixou o job `contrato` vermelho no
+PR #18.
 
 ---
 

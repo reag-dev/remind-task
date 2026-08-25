@@ -24,6 +24,11 @@ export function Login() {
   // funcionou — e a resposta da API é 204, sem corpo para exibir.
   const redefinida = params.get("redefinida") === "1";
 
+  // Mesma ideia, do outro fim da vida da conta: a API responde 204 e a tela de
+  // destino é esta. Sem a marca, quem acabou de excluir a conta cairia num
+  // formulário de login sem nenhuma confirmação de que a exclusão aconteceu.
+  const contaExcluida = params.get("conta-excluida") === "1";
+
   if (estado.nome === "autenticado") return <Navigate to={destino} replace />;
 
   async function enviar(evento: React.FormEvent) {
@@ -46,6 +51,12 @@ export function Login() {
       {redefinida && (
         <p className="aviso" role="status">
           Senha redefinida. Entre com a senha nova.
+        </p>
+      )}
+
+      {contaExcluida && (
+        <p className="aviso" role="status">
+          Conta excluída. Enviamos um e-mail com o que foi apagado.
         </p>
       )}
 
