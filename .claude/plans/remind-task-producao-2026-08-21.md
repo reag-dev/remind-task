@@ -936,22 +936,48 @@ npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha   # ✅ 9
 
 ---
 
-### Phase 11 — Exclusão de conta 🟡 escrita em 2026-08-25, **nada executado**
+### Phase 11 — Exclusão de conta 🟢 concluída 2026-08-26 — verificada
 
-> ⚠️ **Estado honesto:** o código, os testes e a documentação estão escritos, e
-> **nenhuma linha foi executada** — o Docker desta máquina parou de responder no
-> meio da phase (`docker compose ps` retorna vazio com rc=0, o daemon derrubou a
-> stack sob carga). Nada aqui deve ser tratado como verificado até a suíte rodar.
+> **O que a execução disse sobre os dois riscos registrados.** A phase foi
+> escrita em 2026-08-25 com o Docker desta máquina fora do ar, e ficou um dia
+> inteira por verificar. Os dois riscos que o bloco anterior nomeava **não se
+> materializaram**:
 >
-> O item de maior risco é a **migration 0003**: RLS é DDL, e o raciocínio de que
-> ela não quebra o login está apoiado na leitura de `core/rls.py` (o contexto é
-> aberto nas classes de autenticação do DRF, depois do SELECT do JWT), não em
-> execução. `core/tests/test_rls.py` ganhou o teste que prova isso nos dois
-> caminhos — falta rodá-lo.
+> - **Migration 0003 (RLS em `users`).** Aplica, e o raciocínio de leitura de
+>   `core/rls.py` estava certo: `accounts/tests/test_auth.py` +
+>   `core/tests/test_rls.py` passam, 43 testes, com a policy no lugar. Login,
+>   registro e o JOIN do job de alertas continuam funcionando — o rebaixamento
+>   para `remind_app` acontece depois do SELECT que resolve o dono do token.
+> - **`django_capture_on_commit_callbacks`.** Existe na versão em uso
+>   (pytest-django 4.14). O e-mail do `on_commit` é capturado como escrito.
 >
-> Segundo item de risco: os testes usam `django_capture_on_commit_callbacks`
-> para o e-mail que sai no `on_commit`. Se a fixture não estiver disponível na
-> versão de pytest-django em uso, é ali que o vermelho aparece primeiro.
+> **O que a execução encontrou de verdade foram três outras coisas** — todas
+> corrigidas nesta retomada, nenhuma delas prevista:
+>
+> 1. **O merge de 2026-08-26 (`f043f67`) corrompeu
+>    `accounts/tests/test_account_deletion.py`**: a resolução manual fundiu dois
+>    testes, apagando o cabeçalho de `test_anonimo_nao_apaga` e deixando o corpo
+>    dele solto dentro do teste anterior (`NameError: api_client`). Os dois pais
+>    do merge tinham o arquivo íntegro — o estrago nasceu na resolução.
+> 2. **A tela nunca chegava a `/login?conta-excluida=1`.** Não era o teste: era
+>    corrida real. `Conta` chamava `sair()` e depois `navegar()`, mas o React
+>    Router navega dentro de uma *transition* enquanto o `setState` do logout é
+>    urgente — a `<RotaProtegida>` renderizava primeiro, ainda em `/conta`, e o
+>    `<Navigate>` dela (que roda no efeito, depois do commit) atropelava o
+>    `navegar` da tela. O destino ia parar em `/login?next=%2Fconta`, e o aviso
+>    "Conta excluída" jamais aparecia. **Inverter a ordem não resolve** — a
+>    corrida é entre lanes do React, não entre linhas. A correção move a decisão
+>    para quem já é dono dela: `EstadoDeAuth.anonimo` ganhou um `motivo`
+>    opcional, `sair("conta-excluida")` o carrega, e a `<RotaProtegida>` escolhe
+>    o destino. Nenhuma tela navega depois de sair.
+> 3. **O `DELETE` entrou no OpenAPI sem o corpo que ele exige.** O
+>    drf-spectacular descarta `request=` em qualquer método fora de PUT/PATCH/POST
+>    (`AutoSchema._get_request_body`, primeira linha) e **não emite warning** —
+>    o `fail_on_warn` de `core/tests/test_schema.py` não pegaria. Como
+>    `/api/docs/` é a interface do MVP, isso publicava um endpoint que anuncia
+>    "exige a senha atual no corpo", documenta um 400 "senha ausente", e não dá
+>    campo nenhum para mandá-la. `core/schema.py` ganhou
+>    `AutoSchemaComCorpoNoDelete`, aplicado só na `MeView`, com teste próprio.
 
 
 **Depende da Phase 10** (compartilha o padrão de reautenticação) e da Phase 5
@@ -992,6 +1018,13 @@ verdade.
 `frontend/src/components/Layout.tsx` · `frontend/src/App.tsx` ·
 `frontend/src/routes/Login.tsx` · `frontend/src/api/auth.ts` · `README.md`
 
+**Mais cinco na verificação de 2026-08-26,** todos pelos achados 2 e 3 do bloco
+no topo da phase: `frontend/src/auth/contexto.ts` ·
+`frontend/src/auth/AuthProvider.tsx` · `frontend/src/routes/RotaProtegida.tsx`
+(o `motivo` da saída e o destino que ele escolhe) · `core/schema.py` +
+`core/tests/test_schema.py` (o corpo do DELETE no OpenAPI). E
+`frontend/src/api/schema.d.ts`, regerado.
+
 `DialogoConfirmar` ganhou um `confirmarDesabilitado` opcional — a confirmação
 por digitação do e-mail precisa travar o botão por uma condição do chamador, e
 reusar o `confirmando` para isso faria a tela anunciar "Excluindo…" antes de
@@ -1004,27 +1037,37 @@ do banco (um queryset que resolvesse o usuário pelo corpo), e é isso que
 `test_deleting_someone_elses_account_touches_nothing`, em `core/tests/test_rls.py`,
 exercita contra a policy nova.
 
-**Verify — a rodar assim que o Docker voltar, nesta ordem:**
+**Verify — executado em 2026-08-26, nesta ordem:**
 ```bash
-# 1. A migration aplica? É DDL, e é o maior risco desta phase.
+# 1. A migration aplica? É DDL, e é o maior risco desta phase.       ✅
 docker compose exec -T web python manage.py migrate
 
 # 2. A policy nova não pode quebrar o login, que consulta `users` sem contexto:
-docker compose exec -T web pytest accounts/tests/test_auth.py core/tests/test_rls.py -q
+docker compose exec -T web pytest accounts/tests/test_auth.py core/tests/test_rls.py -q  # ✅ 43
 
-# 3. O fluxo em si, e a contraprova do cascade:
+# 3. O fluxo em si, e a contraprova do cascade:                      ✅ 9
 docker compose exec -T web pytest accounts/tests/test_account_deletion.py -q
 docker compose exec -T web pytest -k "deletion_leaves_other_user_intact" -v
 
-# 4. O resto, incluindo o job de alertas que faz JOIN em `users`:
+# 4. O resto, incluindo o job de alertas que faz JOIN em `users`:    ✅
 docker compose exec -T web pytest --cov
-npm run test -- src/routes/Conta
-npm run api:types   # o schema mudou: DELETE em /api/auth/me/
+docker compose exec -T web ruff check .
+docker compose exec -T frontend npm run test
+docker compose exec -T frontend npm run typecheck && npm run lint
+
+# 5. O schema mudou (DELETE em /api/auth/me/), e o job `contrato` da CI compara
+#    o gerado com o commitado. Rodado de dentro do container, contra `web`:
+docker compose exec -T frontend npx openapi-typescript http://web:8000/api/schema/ \
+  -o src/api/schema.d.ts && docker compose exec -T frontend npx prettier --write src/api/schema.d.ts
 ```
 
-⚠️ **O `schema.d.ts` precisa ser regerado também nesta phase** — o `DELETE`
-entrou no OpenAPI. É a mesma pegadinha que deixou o job `contrato` vermelho no
-PR #18.
+> **Sobre o passo 5:** `npm run api:types` aponta para `http://localhost:8000`,
+> o que só funciona a partir do host. De dentro do container `frontend`,
+> `localhost` é o próprio container — daí a URL `http://web:8000` acima. O
+> arquivo gerado é idêntico nos dois caminhos (a URL não entra na saída).
+>
+> E a regeração sozinha **não bastava**: ver o achado 3 no topo da phase — o
+> corpo do DELETE nem chegava ao documento de origem.
 
 ---
 
@@ -1075,12 +1118,14 @@ infra, desde que a Phase 5 espere a decisão de provedor da Phase 0.
 - **Precisar de mais de uma réplica de `web`** → o `migrate` do entrypoint vira
   job separado, e o `beat` precisa de eleição de líder (ou vira cron da
   plataforma, como a Phase 3 já sugere).
-- **A policy de RLS em `users` (Phase 11) quebrar algum caminho
-  pré-autenticação** — login, registro, `createsuperuser`, o Admin — → recuar
-  para policy só de `DELETE`/`UPDATE`, deixando `SELECT` livre. A tabela seria
-  legível pelo papel, o que já é o caso hoje, mas a operação destrutiva ficaria
-  coberta. Recuar de vez, sem policy nenhuma, é decisão consciente que precisa
-  ficar escrita — não silêncio.
+- ~~**A policy de RLS em `users` (Phase 11) quebrar algum caminho
+  pré-autenticação**~~ → **não disparou, verificado em 2026-08-26.** Login,
+  registro e o JOIN do job de alertas passam com a policy no lugar (43 testes em
+  `accounts/tests/test_auth.py` + `core/tests/test_rls.py`). O recuo previsto —
+  policy só de `DELETE`/`UPDATE`, com `SELECT` livre — fica registrado como a
+  saída caso um caminho pré-autenticação novo apareça. Recuar de vez, sem policy
+  nenhuma, continua sendo decisão consciente que precisa ficar escrita — não
+  silêncio.
 - **Descobrir que a exclusão precisa ser reversível** (exigência legal,
   arrependimento de usuário) → vira `is_active=False` + expurgo agendado, e a
   Phase 11 muda de forma: o cascade deixa de ser o mecanismo, e passa a existir

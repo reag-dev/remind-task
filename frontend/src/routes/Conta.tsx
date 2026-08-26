@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useNavigate } from "react-router";
 
 import { excluirConta } from "../api/auth.ts";
 import { ApiError } from "../api/client.ts";
@@ -8,7 +7,6 @@ import { DialogoConfirmar } from "../components/DialogoConfirmar.tsx";
 
 export function Conta() {
   const { estado, sair } = useAuth();
-  const navegar = useNavigate();
   const [aberto, setAberto] = useState(false);
   const [emailDigitado, setEmailDigitado] = useState("");
   const [senha, setSenha] = useState("");
@@ -50,11 +48,6 @@ export function Conta() {
     setExcluindo(true);
     try {
       await excluirConta(senha);
-      // `sair()` mesmo com a conta já apagada: o que ele faz de útil aqui é
-      // limpar o estado local (token em memória, cache de queries). O logout no
-      // servidor é idempotente e não se importa com um refresh já invalidado.
-      await sair();
-      void navegar("/login?conta-excluida=1", { replace: true });
     } catch (falha: unknown) {
       if (falha instanceof ApiError && falha.status === 400) {
         setErro(falha.campo("password")[0] ?? "Não foi possível excluir a conta.");
@@ -62,7 +55,21 @@ export function Conta() {
         setErro("Não foi possível falar com o servidor. Verifique sua conexão.");
       }
       setExcluindo(false);
+      return;
     }
+
+    // Daqui para baixo a conta NÃO existe mais, e nada aqui pode ser tratado
+    // como falha da exclusão — por isso fora do `try` acima.
+    //
+    // `sair()` mesmo com a conta já apagada: o que ele faz de útil aqui é
+    // limpar o estado local (token em memória, cache de queries). O logout no
+    // servidor é idempotente e não se importa com um refresh já invalidado.
+    //
+    // E esta tela NÃO navega. Quem leva ao `/login?conta-excluida=1` é a
+    // `<RotaProtegida>`, a partir do motivo — um `navegar()` daqui perde a
+    // corrida contra o guard, que renderiza assim que o estado vira "anônimo",
+    // ainda em `/conta`, e cujo `<Navigate>` roda depois, já no efeito.
+    await sair("conta-excluida");
   }
 
   return (

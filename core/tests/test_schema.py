@@ -82,6 +82,23 @@ def test_the_whole_api_surface_is_documented(schema):
     )
 
 
+def test_deleting_the_account_documents_the_password_it_demands(schema):
+    """
+    `DELETE /api/auth/me/` exige a senha no corpo, e o corpo tem de aparecer.
+
+    O drf-spectacular descarta corpo em DELETE por padrão, sem warning — o
+    `fail_on_warn` acima não pega. O resultado seria um endpoint documentado
+    como "exige a senha atual" respondendo 400 a quem apertasse "Try it out"
+    sem nenhum campo para preencher, na página que é a interface do MVP.
+    """
+    corpo = schema["paths"]["/api/auth/me/"]["delete"]["requestBody"]
+    referencia = corpo["content"]["application/json"]["schema"]["$ref"]
+    nome = referencia.rsplit("/", 1)[-1]
+
+    assert corpo["required"] is True
+    assert "password" in schema["components"]["schemas"][nome]["properties"]
+
+
 def test_the_docs_page_is_served(client):
     assert client.get(reverse("swagger-ui")).status_code == 200
     assert client.get(reverse("schema")).status_code == 200

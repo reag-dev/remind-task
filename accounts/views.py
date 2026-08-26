@@ -30,6 +30,7 @@ from accounts.serializers import (
     RegisterSerializer,
     UserSerializer,
 )
+from core.schema import AutoSchemaComCorpoNoDelete
 from core.throttling import RecuperacaoDeSenhaThrottle
 
 User = get_user_model()
@@ -146,6 +147,9 @@ class LogoutView(APIView):
 class MeView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    # Sem isto o `request=AccountDeleteSerializer` acima é descartado calado, e
+    # o schema anuncia um 400 "senha ausente" sem campo nenhum para mandá-la.
+    schema = AutoSchemaComCorpoNoDelete()
 
     def get_object(self):
         # Nunca resolve por id vindo da URL — o recurso é sempre o requisitante.

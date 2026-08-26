@@ -881,6 +881,18 @@ O que acontece, em ordem:
    "sua conta foi excluída" chegando a quem ainda tem conta, porque algo deu
    rollback depois, seria o pior aviso possível.
 
+**Quem decide para onde o usuário vai depois é a `<RotaProtegida>`, não a tela.**
+`sair()` aceita um motivo, e o estado `anonimo` o carrega
+([`frontend/src/auth/contexto.ts`](frontend/src/auth/contexto.ts)) — com
+`"conta-excluida"` o destino é `/login?conta-excluida=1`, em vez do
+`?next=` de sessão expirada, que prometeria uma volta para uma tela que não
+existe mais. A alternativa óbvia (a tela chamar `sair()` e depois `navegar()`)
+**não funciona**: o React Router navega dentro de uma *transition* e o
+`setState` do logout é urgente, então o guard renderiza primeiro, ainda na rota
+antiga, e o `<Navigate>` dele — que roda no efeito, depois do commit —
+atropela a navegação da tela. Inverter as duas linhas não resolve; a corrida é
+entre lanes do React, não entre linhas de código.
+
 **Policy de RLS em `users`** ([`core/migrations/0003_users_rls_policy.py`](core/migrations/0003_users_rls_policy.py))
 entrou junto. Ela não existia porque, enquanto nenhum endpoint apagava conta, a
 ausência era inofensiva. Não quebra o login — e o motivo é estrutural: o

@@ -77,10 +77,10 @@ def test_senha_errada_nao_apaga(auth_client, user):
     assert type(user).objects.filter(pk=user.pk).exists()
 
 
+def test_anonimo_nao_apaga(api_client):
     resposta = api_client.delete(ME, {"password": "seja-la-o-que-for"}, format="json")
 
     assert resposta.status_code == 401
-    assert api_client.delete(ME, {"password": "seja-la-o-que-for"}, format="json").status_code == 401
 
 
 # ------------------------------------------------------------ o caminho feliz

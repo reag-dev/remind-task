@@ -133,13 +133,17 @@ export interface paths {
     };
     /** Dados da conta autenticada */
     get: operations["auth_me_retrieve"];
-    /** Dados da conta autenticada */
+    /** Substitui os dados da conta */
     put: operations["auth_me_update"];
     post?: never;
-    delete?: never;
+    /**
+     * Exclui a própria conta (irreversível)
+     * @description Exige a senha atual no corpo, mesmo autenticado. Apaga em cascata tabelas, registros, regras e alertas, encerra todas as sessões e envia um aviso por e-mail.
+     */
+    delete: operations["auth_me_destroy"];
     options?: never;
     head?: never;
-    /** Dados da conta autenticada */
+    /** Atualiza os dados da conta */
     patch: operations["auth_me_partial_update"];
     trace?: never;
   };
@@ -459,6 +463,22 @@ export interface components {
     /** @description Corpo de /auth/refresh/. O refresh rotacionado sai só no cookie. */
     AccessToken: {
       readonly access: string;
+    };
+    /**
+     * @description Exclusão de conta: exige a senha atual, mesmo com o usuário já autenticado.
+     *
+     *     Não é redundância. O access token vale 15 minutos e viaja no cabeçalho de
+     *     toda requisição; um token roubado já dá acesso de leitura e escrita, e isso
+     *     é ruim — mas recuperável, porque o dono troca a senha e o RS07 corta as
+     *     sessões. Apagar a conta **não é recuperável**: o cascade leva tabelas,
+     *     registros, regras e alertas, e não há lixeira. Pedir a prova de novo é o que
+     *     separa "roubaram meu token" de "perdi tudo".
+     *
+     *     É também o padrão que a Phase 10 estabeleceu do outro lado do fluxo — lá o
+     *     token do e-mail prova a posse da caixa; aqui a senha prova a posse da conta.
+     */
+    AccountDelete: {
+      password: string;
     };
     /**
      * @description Payload da notificação.
@@ -1028,6 +1048,37 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["User"];
         };
+      };
+    };
+  };
+  auth_me_destroy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AccountDelete"];
+        "application/x-www-form-urlencoded": components["schemas"]["AccountDelete"];
+        "multipart/form-data": components["schemas"]["AccountDelete"];
+      };
+    };
+    responses: {
+      /** @description Conta excluída. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Senha ausente ou incorreta. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

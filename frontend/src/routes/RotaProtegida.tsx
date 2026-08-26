@@ -14,6 +14,15 @@ export function RotaProtegida() {
   }
 
   if (estado.nome === "anonimo") {
+    // O `next` pressupõe que existe para onde voltar depois de entrar, e quem
+    // acabou de apagar a própria conta não tem: a rota que ele estava vendo
+    // morreu junto com os dados. Mandar de volta para `/conta` seria prometer
+    // uma volta que não acontece — e é aqui que o destino é decidido porque é
+    // aqui que se sabe que a sessão acabou, antes de qualquer tela reagir.
+    if (estado.motivo === "conta-excluida") {
+      return <Navigate to="/login?conta-excluida=1" replace />;
+    }
+
     const destino = `${local.pathname}${local.search}`;
     return <Navigate to={`/login?next=${encodeURIComponent(destino)}`} replace />;
   }
