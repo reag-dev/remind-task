@@ -26,4 +26,17 @@ urlpatterns = [
     path("refresh/", views.RefreshView.as_view(), name="refresh"),
     path("logout/", views.LogoutView.as_view(), name="logout"),
     path("me/", views.MeView.as_view(), name="me"),
+    # Os dois nomes espelham o par pedir/consumir. O link do e-mail aponta para
+    # a SPA, nao para estes endpoints — quem renderiza o formulario e o
+    # frontend, que so entao chama o `confirm`.
+    path(
+        "password-reset/",
+        views.PasswordResetRequestView.as_view(),
+        name="password-reset",
+    ),
+    path(
+        "password-reset/confirm/",
+        views.PasswordResetConfirmView.as_view(),
+        name="password-reset-confirm",
+    ),
 ]

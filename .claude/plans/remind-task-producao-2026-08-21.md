@@ -858,59 +858,127 @@ a isenção, a 61ª seria 429.
 
 ---
 
-### Phase 10 — Recuperação de senha por e-mail
+### Phase 10 — Recuperação de senha por e-mail 🟢 concluída 2026-08-25
 
 **Depende da Phase 5** (backend de e-mail configurado).
 
 **Objective:** quem esqueceu a senha volta a entrar, sem que o fluxo vire um
 oráculo de quais e-mails têm conta.
 
-- Dois endpoints: pedir o link e consumir o token.
-- **Token do `PasswordResetTokenGenerator` do Django**, não um token próprio. Ele
-  deriva o hash da senha atual e do `last_login`, então **usar uma vez o
-  invalida** — sem tabela nova, sem coluna nova, sem rotina de expurgo. Escrever
-  um token próprio aqui seria refazer, pior, o que a stdlib do framework já faz.
-- **A resposta é idêntica exista ou não a conta.** Sempre 204, sempre a mesma
-  mensagem na tela. Um 404 para e-mail desconhecido transformaria o endpoint em
-  verificador de cadastro — o mesmo raciocínio do RS04, que devolve 404 em vez
-  de 403 para não confirmar que um recurso existe. Teste comparando as duas
-  respostas byte a byte.
-- **O link aponta para o frontend**, não para a API: `FRONTEND_URL` entra como
-  variável de ambiente (`/redefinir-senha?uid=…&token=…`), porque quem renderiza
-  o formulário é a SPA.
-- **Redefinir invalida todas as sessões**: blacklist dos refresh tokens em
-  aberto. Sem isso, quem roubou um refresh continua dentro por 7 dias
-  **justamente depois** de a vítima trocar a senha por suspeitar do roubo.
-  É o RS07 aplicado ao caso em que ele mais importa.
-- **Limpar o bloqueio do django-axes** ao redefinir com sucesso: quem esqueceu a
-  senha erra várias vezes antes de pedir o link, e chegaria ao fim do fluxo
-  ainda travado, sem entender por quê.
-- Throttling apertado nos dois endpoints (Phase 4): é vetor de spam para caixas
-  de terceiros.
-- A senha nova passa pelos mesmos validadores do registro.
-
-**Files Touched:**
+**Files Touched (o que o plano previa, mais três):**
 `accounts/views.py` · `accounts/serializers.py` · `accounts/urls.py` ·
-`config/settings/base.py` ·
+`accounts/emails.py` (novo — não previsto) ·
 `accounts/templates/accounts/redefinir_senha.txt` (novo) ·
-`accounts/tests/test_password_reset.py` (novo) ·
+`config/settings/base.py` · `core/throttling.py` (não previsto) ·
+`.railway/railway.ts` (não previsto) · `.env.example` · `.env.prod.example` ·
+`README.md` · `accounts/tests/test_password_reset.py` (novo) ·
 `tests/security/test_user_enumeration.py` (novo) ·
-`frontend/src/routes/EsqueciSenha.tsx` (novo) ·
-`frontend/src/routes/RedefinirSenha.tsx` (novo) ·
-`frontend/src/routes/Login.tsx` · `frontend/src/App.tsx` · `frontend/src/api/auth.ts`
+`tests/security/test_throttling.py` · `tests/security/test_auth_required.py` ·
+`frontend/src/routes/EsqueciSenha.tsx` + teste (novos) ·
+`frontend/src/routes/RedefinirSenha.tsx` + teste (novos) ·
+`frontend/src/routes/Login.tsx` · `frontend/src/App.tsx` ·
+`frontend/src/api/auth.ts` · `frontend/src/api/schema.d.ts` (regerado)
+
+Os três não previstos: `accounts/emails.py` (montar separado de enviar, como em
+`alerts/emails.py` — é o que permite testar o conteúdo sem transporte),
+`core/throttling.py` (o teto próprio precisa de uma classe) e
+`.railway/railway.ts` (ver o achado 3 abaixo).
+
+> **Três coisas que só apareceram implementando.**
+>
+> **1. O template escapava o `&` do link — e o teste pegou na primeira
+> execução.** Sem `{% autoescape off %}`, o Django transforma `&` em `&amp;` no
+> corpo `text/plain`. Não protege de nada ali, e QUEBRA o link: o frontend
+> receberia um parâmetro chamado `amp;token`, e o fluxo morreria na tela de
+> "link inválido" sem ninguém entender por quê. Coberto por
+> `test_o_link_nao_sai_com_html_escapado`.
+>
+> **2. Entrar invalida um link já pedido.** O token deriva do `last_login`, que
+> o login atualiza. Quem pede o link, lembra a senha, entra e só depois clica no
+> e-mail encontra "link inválido". É o comportamento do Django e é defensável —
+> a sessão nova prova que o dono já está dentro —, mas apareceu como um teste
+> vermelho cuja causa levou minutos para achar. Está registrado em
+> `test_entrar_invalida_um_link_ja_pedido` para não ser diagnosticado do zero
+> outra vez. Também reordenou o teste de blacklist: a sessão precisa existir
+> ANTES do pedido do link.
+>
+> **3. `FRONTEND_URL` faltava no `.railway/railway.ts`.** O default de `base.py`
+> é `http://localhost:3000` — e um default que FUNCIONA é pior que nenhum aqui:
+> o serviço sobe, o e-mail sai sem erro, e o usuário clica num link que não leva
+> a lugar nenhum. Sem log dizendo isso, porque o envio foi um sucesso.
+
+**Decisões que o plano pedia, e como ficaram:**
+
+- **Token do `PasswordResetTokenGenerator`**, não caseiro. Uso único de graça (o
+  hash deriva da senha atual), sem tabela, sem coluna, sem expurgo.
+- **Resposta idêntica exista ou não a conta** — 204 sempre, e as comparações de
+  `tests/security/test_user_enumeration.py` são **byte a byte**, não "os dois
+  são 204". Conta inativa também não se distingue de inexistente. O `enviar()`
+  usa `fail_silently=True` justamente por isso: deixar a exceção do SMTP subir
+  faria endereço-com-conta devolver 500 e endereço-sem-conta devolver 204.
+- **Limitação registrada em vez de escondida:** a simetria não cobre o TEMPO.
+  Endereço com conta paga um SMTP; sem conta responde na hora. Fechar exigiria
+  empurrar o envio para o Celery — trocando um oráculo de tempo por um modo de
+  falha silencioso (worker fora = ninguém recupera senha). A troca não vale, e
+  está escrita na view.
+- **Redefinir encerra todas as sessões** (blacklist dos refresh em aberto) e
+  **limpa o bloqueio do django-axes**.
+- **Teto próprio por IP** nos DOIS endpoints — o de consumir também, porque
+  adivinhar token exige repetição.
 
 **Verify:**
 ```bash
 docker compose exec -T web pytest accounts/tests/test_password_reset.py \
-  tests/security/test_user_enumeration.py -v
-# O token é de uso único e a sessão antiga morre:
-docker compose exec -T web pytest -k "reset_token_cannot_be_reused or reset_blacklists" -v
-cd frontend && npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha
+  tests/security/test_user_enumeration.py -q          # ✅ 14 + 4
+docker compose exec -T web pytest -k "reset_token_cannot_be_reused or reset_blacklists" -q
+npm run test -- src/routes/EsqueciSenha src/routes/RedefinirSenha   # ✅ 9
 ```
 
 ---
 
-### Phase 11 — Exclusão de conta
+### Phase 11 — Exclusão de conta 🟢 concluída 2026-08-26 — verificada
+
+> **O que a execução disse sobre os dois riscos registrados.** A phase foi
+> escrita em 2026-08-25 com o Docker desta máquina fora do ar, e ficou um dia
+> inteira por verificar. Os dois riscos que o bloco anterior nomeava **não se
+> materializaram**:
+>
+> - **Migration 0003 (RLS em `users`).** Aplica, e o raciocínio de leitura de
+>   `core/rls.py` estava certo: `accounts/tests/test_auth.py` +
+>   `core/tests/test_rls.py` passam, 43 testes, com a policy no lugar. Login,
+>   registro e o JOIN do job de alertas continuam funcionando — o rebaixamento
+>   para `remind_app` acontece depois do SELECT que resolve o dono do token.
+> - **`django_capture_on_commit_callbacks`.** Existe na versão em uso
+>   (pytest-django 4.14). O e-mail do `on_commit` é capturado como escrito.
+>
+> **O que a execução encontrou de verdade foram três outras coisas** — todas
+> corrigidas nesta retomada, nenhuma delas prevista:
+>
+> 1. **O merge de 2026-08-26 (`f043f67`) corrompeu
+>    `accounts/tests/test_account_deletion.py`**: a resolução manual fundiu dois
+>    testes, apagando o cabeçalho de `test_anonimo_nao_apaga` e deixando o corpo
+>    dele solto dentro do teste anterior (`NameError: api_client`). Os dois pais
+>    do merge tinham o arquivo íntegro — o estrago nasceu na resolução.
+> 2. **A tela nunca chegava a `/login?conta-excluida=1`.** Não era o teste: era
+>    corrida real. `Conta` chamava `sair()` e depois `navegar()`, mas o React
+>    Router navega dentro de uma *transition* enquanto o `setState` do logout é
+>    urgente — a `<RotaProtegida>` renderizava primeiro, ainda em `/conta`, e o
+>    `<Navigate>` dela (que roda no efeito, depois do commit) atropelava o
+>    `navegar` da tela. O destino ia parar em `/login?next=%2Fconta`, e o aviso
+>    "Conta excluída" jamais aparecia. **Inverter a ordem não resolve** — a
+>    corrida é entre lanes do React, não entre linhas. A correção move a decisão
+>    para quem já é dono dela: `EstadoDeAuth.anonimo` ganhou um `motivo`
+>    opcional, `sair("conta-excluida")` o carrega, e a `<RotaProtegida>` escolhe
+>    o destino. Nenhuma tela navega depois de sair.
+> 3. **O `DELETE` entrou no OpenAPI sem o corpo que ele exige.** O
+>    drf-spectacular descarta `request=` em qualquer método fora de PUT/PATCH/POST
+>    (`AutoSchema._get_request_body`, primeira linha) e **não emite warning** —
+>    o `fail_on_warn` de `core/tests/test_schema.py` não pegaria. Como
+>    `/api/docs/` é a interface do MVP, isso publicava um endpoint que anuncia
+>    "exige a senha atual no corpo", documenta um 400 "senha ausente", e não dá
+>    campo nenhum para mandá-la. `core/schema.py` ganhou
+>    `AutoSchemaComCorpoNoDelete`, aplicado só na `MeView`, com teste próprio.
+
 
 **Depende da Phase 10** (compartilha o padrão de reautenticação) e da Phase 5
 (e-mail de confirmação).
@@ -939,25 +1007,67 @@ verdade.
 - UI: confirmação por digitação do e-mail, não um "tem certeza?". O
   `DialogoConfirmar` já existe e é reusado.
 
-**Files Touched:**
-`accounts/views.py` · `accounts/serializers.py` ·
+**Files Touched (previstos, mais dois; um previsto não foi mexido):**
+`accounts/views.py` · `accounts/serializers.py` · `accounts/emails.py` ·
 `core/migrations/0003_users_rls_policy.py` (novo) ·
 `accounts/templates/accounts/conta_excluida.txt` (novo) ·
 `accounts/tests/test_account_deletion.py` (novo) ·
-`core/tests/test_rls.py` · `tests/security/test_cross_tenant.py` ·
-`frontend/src/routes/Conta.tsx` (novo) · `frontend/src/components/Layout.tsx` ·
-`frontend/src/App.tsx` · `frontend/src/api/auth.ts`
+`core/tests/test_rls.py` ·
+`frontend/src/routes/Conta.tsx` + teste (novos) ·
+`frontend/src/components/DialogoConfirmar.tsx` ·
+`frontend/src/components/Layout.tsx` · `frontend/src/App.tsx` ·
+`frontend/src/routes/Login.tsx` · `frontend/src/api/auth.ts` · `README.md`
 
-**Verify:**
+**Mais cinco na verificação de 2026-08-26,** todos pelos achados 2 e 3 do bloco
+no topo da phase: `frontend/src/auth/contexto.ts` ·
+`frontend/src/auth/AuthProvider.tsx` · `frontend/src/routes/RotaProtegida.tsx`
+(o `motivo` da saída e o destino que ele escolhe) · `core/schema.py` +
+`core/tests/test_schema.py` (o corpo do DELETE no OpenAPI). E
+`frontend/src/api/schema.d.ts`, regerado.
+
+`DialogoConfirmar` ganhou um `confirmarDesabilitado` opcional — a confirmação
+por digitação do e-mail precisa travar o botão por uma condição do chamador, e
+reusar o `confirmando` para isso faria a tela anunciar "Excluindo…" antes de
+qualquer exclusão começar.
+
+**`tests/security/test_cross_tenant.py` não foi tocado, de propósito.** Ele
+cobre acesso a recurso alheio por id, e `DELETE /api/auth/me/` não aceita id
+nenhum — opera sempre sobre `request.user`. O ataque equivalente aqui é no nível
+do banco (um queryset que resolvesse o usuário pelo corpo), e é isso que
+`test_deleting_someone_elses_account_touches_nothing`, em `core/tests/test_rls.py`,
+exercita contra a policy nova.
+
+**Verify — executado em 2026-08-26, nesta ordem:**
 ```bash
-docker compose exec -T web pytest accounts/tests/test_account_deletion.py \
-  core/tests/test_rls.py tests/security/ -q
-# A policy nova não pode quebrar o login, que consulta `users` sem contexto:
-docker compose exec -T web pytest accounts/tests/test_auth.py -q
-# Apagar A não pode tocar em B:
+# 1. A migration aplica? É DDL, e é o maior risco desta phase.       ✅
+docker compose exec -T web python manage.py migrate
+
+# 2. A policy nova não pode quebrar o login, que consulta `users` sem contexto:
+docker compose exec -T web pytest accounts/tests/test_auth.py core/tests/test_rls.py -q  # ✅ 43
+
+# 3. O fluxo em si, e a contraprova do cascade:                      ✅ 9
+docker compose exec -T web pytest accounts/tests/test_account_deletion.py -q
 docker compose exec -T web pytest -k "deletion_leaves_other_user_intact" -v
-cd frontend && npm run test -- src/routes/Conta
+
+# 4. O resto, incluindo o job de alertas que faz JOIN em `users`:    ✅
+docker compose exec -T web pytest --cov
+docker compose exec -T web ruff check .
+docker compose exec -T frontend npm run test
+docker compose exec -T frontend npm run typecheck && npm run lint
+
+# 5. O schema mudou (DELETE em /api/auth/me/), e o job `contrato` da CI compara
+#    o gerado com o commitado. Rodado de dentro do container, contra `web`:
+docker compose exec -T frontend npx openapi-typescript http://web:8000/api/schema/ \
+  -o src/api/schema.d.ts && docker compose exec -T frontend npx prettier --write src/api/schema.d.ts
 ```
+
+> **Sobre o passo 5:** `npm run api:types` aponta para `http://localhost:8000`,
+> o que só funciona a partir do host. De dentro do container `frontend`,
+> `localhost` é o próprio container — daí a URL `http://web:8000` acima. O
+> arquivo gerado é idêntico nos dois caminhos (a URL não entra na saída).
+>
+> E a regeração sozinha **não bastava**: ver o achado 3 no topo da phase — o
+> corpo do DELETE nem chegava ao documento de origem.
 
 ---
 
@@ -1008,12 +1118,14 @@ infra, desde que a Phase 5 espere a decisão de provedor da Phase 0.
 - **Precisar de mais de uma réplica de `web`** → o `migrate` do entrypoint vira
   job separado, e o `beat` precisa de eleição de líder (ou vira cron da
   plataforma, como a Phase 3 já sugere).
-- **A policy de RLS em `users` (Phase 11) quebrar algum caminho
-  pré-autenticação** — login, registro, `createsuperuser`, o Admin — → recuar
-  para policy só de `DELETE`/`UPDATE`, deixando `SELECT` livre. A tabela seria
-  legível pelo papel, o que já é o caso hoje, mas a operação destrutiva ficaria
-  coberta. Recuar de vez, sem policy nenhuma, é decisão consciente que precisa
-  ficar escrita — não silêncio.
+- ~~**A policy de RLS em `users` (Phase 11) quebrar algum caminho
+  pré-autenticação**~~ → **não disparou, verificado em 2026-08-26.** Login,
+  registro e o JOIN do job de alertas passam com a policy no lugar (43 testes em
+  `accounts/tests/test_auth.py` + `core/tests/test_rls.py`). O recuo previsto —
+  policy só de `DELETE`/`UPDATE`, com `SELECT` livre — fica registrado como a
+  saída caso um caminho pré-autenticação novo apareça. Recuar de vez, sem policy
+  nenhuma, continua sendo decisão consciente que precisa ficar escrita — não
+  silêncio.
 - **Descobrir que a exclusão precisa ser reversível** (exigência legal,
   arrependimento de usuário) → vira `is_active=False` + expurgo agendado, e a
   Phase 11 muda de forma: o cascade deixa de ser o mecanismo, e passa a existir

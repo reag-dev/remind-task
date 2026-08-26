@@ -133,14 +133,58 @@ export interface paths {
     };
     /** Dados da conta autenticada */
     get: operations["auth_me_retrieve"];
-    /** Dados da conta autenticada */
+    /** Substitui os dados da conta */
     put: operations["auth_me_update"];
     post?: never;
+    /**
+     * Exclui a própria conta (irreversível)
+     * @description Exige a senha atual no corpo, mesmo autenticado. Apaga em cascata tabelas, registros, regras e alertas, encerra todas as sessões e envia um aviso por e-mail.
+     */
+    delete: operations["auth_me_destroy"];
+    options?: never;
+    head?: never;
+    /** Atualiza os dados da conta */
+    patch: operations["auth_me_partial_update"];
+    trace?: never;
+  };
+  "/api/auth/password-reset/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Pede o link de redefinição de senha
+     * @description Sempre 204, exista ou não a conta. A resposta é idêntica nos dois casos de propósito — ver a nota na view.
+     */
+    post: operations["auth_password_reset_create"];
     delete?: never;
     options?: never;
     head?: never;
-    /** Dados da conta autenticada */
-    patch: operations["auth_me_partial_update"];
+    patch?: never;
+    trace?: never;
+  };
+  "/api/auth/password-reset/confirm/": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Redefine a senha com o token do e-mail
+     * @description Consome o link. Em caso de sucesso, TODAS as sessões em aberto são encerradas e o bloqueio do django-axes é limpo.
+     */
+    post: operations["auth_password_reset_confirm_create"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
     trace?: never;
   };
   "/api/auth/refresh/": {
@@ -421,6 +465,22 @@ export interface components {
       readonly access: string;
     };
     /**
+     * @description Exclusão de conta: exige a senha atual, mesmo com o usuário já autenticado.
+     *
+     *     Não é redundância. O access token vale 15 minutos e viaja no cabeçalho de
+     *     toda requisição; um token roubado já dá acesso de leitura e escrita, e isso
+     *     é ruim — mas recuperável, porque o dono troca a senha e o RS07 corta as
+     *     sessões. Apagar a conta **não é recuperável**: o cascade leva tabelas,
+     *     registros, regras e alertas, e não há lixeira. Pedir a prova de novo é o que
+     *     separa "roubaram meu token" de "perdi tudo".
+     *
+     *     É também o padrão que a Phase 10 estabeleceu do outro lado do fluxo — lá o
+     *     token do e-mail prova a posse da caixa; aqui a senha prova a posse da conta.
+     */
+    AccountDelete: {
+      password: string;
+    };
+    /**
      * @description Payload da notificação.
      *
      *     RS05 — carrega o mínimo: nome da tabela, vencimento e um rótulo curto do
@@ -584,6 +644,28 @@ export interface components {
        */
       previous?: string | null;
       results: components["schemas"]["Table"][];
+    };
+    /**
+     * @description Consome o link: `uid` + `token` + senha nova.
+     *
+     *     Nada de token próprio, tabela de pedidos ou coluna nova. O
+     *     `PasswordResetTokenGenerator` do Django deriva o hash a partir da senha
+     *     ATUAL e do `last_login` do usuário — então trocar a senha invalida o token
+     *     sozinho, e não existe estado para expurgar. Um token caseiro aqui seria
+     *     refazer, pior, o que o framework já faz.
+     */
+    PasswordResetConfirm: {
+      uid: string;
+      token: string;
+      password: string;
+    };
+    /**
+     * @description Só o endereço. O que se faz com ele é decisão da view — e a decisão é a
+     *     mesma, exista ou não a conta.
+     */
+    PasswordResetRequest: {
+      /** Format: email */
+      email: string;
     };
     PatchedAlertRule: {
       /** Format: uuid */
@@ -969,6 +1051,37 @@ export interface operations {
       };
     };
   };
+  auth_me_destroy: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AccountDelete"];
+        "application/x-www-form-urlencoded": components["schemas"]["AccountDelete"];
+        "multipart/form-data": components["schemas"]["AccountDelete"];
+      };
+    };
+    responses: {
+      /** @description Conta excluída. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Senha ausente ou incorreta. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
   auth_me_partial_update: {
     parameters: {
       query?: never;
@@ -991,6 +1104,61 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["User"];
         };
+      };
+    };
+  };
+  auth_password_reset_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordResetRequest"];
+        "application/x-www-form-urlencoded": components["schemas"]["PasswordResetRequest"];
+        "multipart/form-data": components["schemas"]["PasswordResetRequest"];
+      };
+    };
+    responses: {
+      /** @description Pedido recebido. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+    };
+  };
+  auth_password_reset_confirm_create: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PasswordResetConfirm"];
+        "application/x-www-form-urlencoded": components["schemas"]["PasswordResetConfirm"];
+        "multipart/form-data": components["schemas"]["PasswordResetConfirm"];
+      };
+    };
+    responses: {
+      /** @description Senha redefinida. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Link inválido ou senha recusada. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
       };
     };
   };

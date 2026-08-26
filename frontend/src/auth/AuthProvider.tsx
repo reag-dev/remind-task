@@ -2,16 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import * as api from "../api/auth.ts";
 import { registrarRenovacao } from "../api/client.ts";
-import { ContextoDeAuth, type EstadoDeAuth } from "./contexto.ts";
+import { ContextoDeAuth, type EstadoDeAuth, type MotivoDeSaida } from "./contexto.ts";
 import { renovarAccessToken } from "./refresh.ts";
 import { gravarAccessToken } from "./sessao.ts";
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [estado, setEstado] = useState<EstadoDeAuth>({ nome: "carregando" });
 
-  const encerrarLocalmente = useCallback(() => {
+  // Sem motivo por padrão: o caminho comum (token morto, logout no menu) não
+  // tem nada a explicar, e é a `<RotaProtegida>` que lê o motivo quando existe.
+  const encerrarLocalmente = useCallback((motivo?: MotivoDeSaida) => {
     gravarAccessToken(null);
-    setEstado({ nome: "anonimo" });
+    setEstado({ nome: "anonimo", motivo });
   }, []);
 
   // Bootstrap: reconstrói a sessão a partir do cookie httpOnly.
@@ -68,10 +70,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setEstado({ nome: "autenticado", usuario: user });
   }, []);
 
-  const sair = useCallback(async () => {
-    await api.logout();
-    encerrarLocalmente();
-  }, [encerrarLocalmente]);
+  const sair = useCallback(
+    async (motivo?: MotivoDeSaida) => {
+      await api.logout();
+      encerrarLocalmente(motivo);
+    },
+    [encerrarLocalmente],
+  );
 
   const valor = useMemo(() => ({ estado, entrar, sair }), [estado, entrar, sair]);
 

@@ -27,6 +27,8 @@ PUBLICAS = {
     "accounts:login": "idem",
     "accounts:refresh": "a autoridade é o refresh token no cookie, não o access",
     "accounts:logout": "encerrar sessão precisa funcionar com o access já expirado",
+    "accounts:password-reset": "quem esqueceu a senha não tem como se autenticar",
+    "accounts:password-reset-confirm": "idem — a autoridade é o token do e-mail",
     "schema": "descreve a forma da API, nunca dado — drf-spectacular serve com AllowAny",
     "swagger-ui": "idem",
 }

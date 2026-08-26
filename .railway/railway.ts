@@ -145,6 +145,14 @@ export default defineRailway(() => {
       // em outro registrable domain, CORS vazio significa SPA em branco.
       CORS_ALLOWED_ORIGINS: preserve(),
       CSRF_TRUSTED_ORIGINS: preserve(),
+      // Para onde o link de recuperação de senha aponta (Phase 10). Também é
+      // só do `web`: é ele que monta o e-mail.
+      //
+      // ⚠️ O default de `base.py` é `http://localhost:3000`, e um default que
+      // FUNCIONA é pior que nenhum aqui: sem esta variável o serviço sobe,
+      // envia o e-mail sem erro e o usuário clica num link que não leva a
+      // lugar nenhum. Não há log dizendo isso — o envio foi um sucesso.
+      FRONTEND_URL: preserve(),
     },
   });
 

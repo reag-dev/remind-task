@@ -48,3 +48,41 @@ export async function logout(): Promise<void> {
     // Sessão local será limpa de qualquer forma; o refresh expira em 7 dias.
   }
 }
+
+export type DadosDeRedefinicao = { uid: string; token: string; password: string };
+
+/**
+ * Pede o link de recuperação.
+ *
+ * Sempre 204, exista ou não a conta — a API não conta quais e-mails têm
+ * cadastro (ver `tests/security/test_user_enumeration.py`). A tela precisa
+ * honrar isso: uma mensagem diferente aqui recriaria, no cliente, o oráculo que
+ * o servidor recusa ser.
+ */
+export function pedirRecuperacao(email: string): Promise<void> {
+  return request<void>("/auth/password-reset/", { method: "POST", body: { email } });
+}
+
+/**
+ * Consome o link e troca a senha.
+ *
+ * Em caso de sucesso o backend encerra TODAS as sessões em aberto (blacklist dos
+ * refresh tokens) — inclusive a de quem estiver logado neste browser.
+ */
+export function redefinirSenha(dados: DadosDeRedefinicao): Promise<void> {
+  return request<void>("/auth/password-reset/confirm/", { method: "POST", body: dados });
+}
+
+/**
+ * Exclui a própria conta. Irreversível.
+ *
+ * A senha atual vai no corpo mesmo com o usuário autenticado, e o `DELETE`
+ * carrega corpo por isso — é incomum, mas legal, e a alternativa (um
+ * `POST /auth/me/delete/`) inventaria uma rota para não usar o verbo certo.
+ *
+ * O backend apaga em cascata tabelas, registros, regras e alertas, coloca os
+ * refresh em aberto na blacklist e responde 204 já limpando o cookie.
+ */
+export function excluirConta(password: string): Promise<void> {
+  return request<void>("/auth/me/", { method: "DELETE", body: { password } });
+}

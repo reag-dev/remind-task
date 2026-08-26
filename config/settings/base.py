@@ -311,6 +311,11 @@ REST_FRAMEWORK = {
         # impede que ele consuma a cota geral do usuário e, principalmente, que
         # alguém o use em laço.
         "export": config("THROTTLE_EXPORT", default="20/hour"),
+        # Recuperação de senha: manda e-mail para um endereço que quem chama
+        # escolhe. Sem teto apertado, é ferramenta de spam contra caixa de
+        # terceiro — e o custo de cada requisição é um SMTP inteiro. Por IP,
+        # porque o fluxo é anônimo por definição.
+        "password_reset": config("THROTTLE_PASSWORD_RESET", default="5/hour"),
     },
     # Sem isto, o limite anônimo é contornável trivialmente.
     #
@@ -476,3 +481,18 @@ CELERY_BEAT_SCHEDULE = {
         "schedule": crontab(minute="5-59/15"),
     },
 }
+
+# ------------------------------------------- recuperação de senha (Phase 10)
+
+# Para onde o link do e-mail aponta. É a SPA que renderiza o formulário de nova
+# senha, não a API — mandar o usuário para um endpoint DRF seria entregá-lo a
+# uma tela de browsable API (ou a um 405, em produção, onde ela não sobe).
+#
+# Sem default de produção de propósito: um valor plausível aqui produziria links
+# que apontam para o lugar errado sem ninguém perceber. O default é o Vite local.
+FRONTEND_URL = config("FRONTEND_URL", default="http://localhost:3000").rstrip("/")
+
+# Quanto tempo o link vale. O token do PasswordResetTokenGenerator carrega o
+# instante de emissão, e é ISTO que o Django compara — não há registro em banco
+# para expurgar.
+PASSWORD_RESET_TIMEOUT = config("PASSWORD_RESET_TIMEOUT", default=3600, cast=int)

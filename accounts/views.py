@@ -1,15 +1,21 @@
 from contextlib import suppress
 
-from drf_spectacular.utils import OpenApiResponse, extend_schema
+from axes.utils import reset as axes_reset
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.utils import timezone
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from accounts import emails
 from accounts.cookies import (
     delete_refresh_cookie,
     read_refresh_token,
@@ -17,10 +23,17 @@ from accounts.cookies import (
 )
 from accounts.serializers import (
     AccessTokenSerializer,
+    AccountDeleteSerializer,
     LoginSerializer,
+    PasswordResetConfirmSerializer,
+    PasswordResetRequestSerializer,
     RegisterSerializer,
     UserSerializer,
 )
+from core.schema import AutoSchemaComCorpoNoDelete
+from core.throttling import RecuperacaoDeSenhaThrottle
+
+User = get_user_model()
 
 
 @extend_schema(tags=["auth"], summary="Cadastro de usuário (RF01)")
@@ -112,11 +125,177 @@ class LogoutView(APIView):
         return delete_refresh_cookie(response)
 
 
-@extend_schema(tags=["auth"], summary="Dados da conta autenticada")
-class MeView(generics.RetrieveUpdateAPIView):
+@extend_schema_view(
+    get=extend_schema(tags=["auth"], summary="Dados da conta autenticada"),
+    put=extend_schema(tags=["auth"], summary="Substitui os dados da conta"),
+    patch=extend_schema(tags=["auth"], summary="Atualiza os dados da conta"),
+    delete=extend_schema(
+        tags=["auth"],
+        summary="Exclui a própria conta (irreversível)",
+        description=(
+            "Exige a senha atual no corpo, mesmo autenticado. Apaga em cascata "
+            "tabelas, registros, regras e alertas, encerra todas as sessões e "
+            "envia um aviso por e-mail."
+        ),
+        request=AccountDeleteSerializer,
+        responses={
+            204: OpenApiResponse(description="Conta excluída."),
+            400: OpenApiResponse(description="Senha ausente ou incorreta."),
+        },
+    ),
+)
+class MeView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAuthenticated]
+    # Sem isto o `request=AccountDeleteSerializer` acima é descartado calado, e
+    # o schema anuncia um 400 "senha ausente" sem campo nenhum para mandá-la.
+    schema = AutoSchemaComCorpoNoDelete()
 
     def get_object(self):
         # Nunca resolve por id vindo da URL — o recurso é sempre o requisitante.
         return self.request.user
+
+    def destroy(self, request, *args, **kwargs):
+        user = self.get_object()
+
+        # A senha é conferida ANTES de qualquer efeito. Um `perform_destroy` que
+        # valida no meio deixaria a ordem depender de detalhe do DRF.
+        confirmacao = AccountDeleteSerializer(data=request.data, context={"user": user})
+        confirmacao.is_valid(raise_exception=True)
+
+        # Contado antes de apagar, por motivo óbvio, e é só CONTAGEM: o conteúdo
+        # de um registro nunca sai por e-mail (RS05).
+        resumo = {
+            "tabelas": user.tables.count(),
+            "registros": user.records.count(),
+            "regras": user.alert_rules.count(),
+            "alertas": user.alerts.count(),
+        }
+        email, nome, quando = user.email, user.get_short_name(), timezone.now()
+
+        # Antes do delete, e explicitamente: `OutstandingToken.user` é SET_NULL,
+        # não CASCADE. Sem isto os refresh tokens viram linhas órfãs com
+        # `user_id = NULL`, criptograficamente válidas até expirarem. Na prática
+        # o acesso já falharia (a busca do usuário pelo claim não acha ninguém),
+        # mas confiar nisso contraria o RS07 — que fez o logout usar blacklist
+        # justamente para "sair" significar alguma coisa em vez de depender do
+        # acaso. Depois do delete seria tarde: a linha some e com ela o vínculo.
+        _encerrar_sessoes(user)
+
+        user.delete()
+
+        # `on_commit` e não uma chamada direta: com ATOMIC_REQUESTS a exclusão só
+        # é definitiva no commit da request. Enviar antes deixaria a porta aberta
+        # para o pior aviso possível — "sua conta foi excluída" chegando a quem
+        # ainda tem conta, porque algo depois deu rollback.
+        transaction.on_commit(
+            lambda: emails.enviar_exclusao(email, nome, quando, resumo)
+        )
+
+        resposta = Response(status=status.HTTP_204_NO_CONTENT)
+        # O cookie de refresh não é mais válido (o token está na blacklist), mas
+        # deixá-lo no browser faria a SPA tentar renovar e receber 401 na cara do
+        # usuário logo depois de uma operação bem-sucedida.
+        return delete_refresh_cookie(resposta)
+
+
+@extend_schema(
+    tags=["auth"],
+    summary="Pede o link de redefinição de senha",
+    description=(
+        "Sempre 204, exista ou não a conta. A resposta é idêntica nos dois "
+        "casos de propósito — ver a nota na view."
+    ),
+    request=PasswordResetRequestSerializer,
+    responses={204: OpenApiResponse(description="Pedido recebido.")},
+)
+class PasswordResetRequestView(APIView):
+    permission_classes = [AllowAny]
+    # Teto próprio, apertado: cada chamada faz o servidor mandar e-mail para um
+    # endereço que QUEM CHAMA escolhe. Ver core/throttling.py.
+    throttle_classes = [RecuperacaoDeSenhaThrottle]
+
+    def post(self, request):
+        serializer = PasswordResetRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # `filter().first()` e não `get()`: o caminho "não existe" não pode ser
+        # uma exceção, porque exceção vira resposta diferente.
+        #
+        # `is_active=True` junto — conta desativada não recebe link. Sem isso,
+        # desativar uma conta deixaria de ser suficiente para tirá-la do ar.
+        user = User.objects.filter(
+            email=serializer.validated_data["email"], is_active=True
+        ).first()
+
+        if user is not None:
+            emails.enviar(user)
+
+        # 204 SEMPRE. Um 404 para e-mail desconhecido transformaria o endpoint
+        # num verificador de cadastro: bastaria varrer uma lista de endereços e
+        # ler os códigos de resposta. É o mesmo raciocínio do RS04.
+        #
+        # ⚠️ O que esta simetria NÃO cobre: o TEMPO. Endereço com conta paga um
+        # SMTP; endereço sem conta responde na hora. A diferença é medível por
+        # quem insista, e some no ruído da rede para quem não. Fechá-la exigiria
+        # empurrar o envio para a fila do Celery — o que troca um oráculo de
+        # tempo por um modo de falha silencioso (worker fora do ar = ninguém
+        # recupera senha, sem nada na resposta dizendo isso). A troca não vale a
+        # pena aqui, e fica registrada em vez de esquecida.
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@extend_schema(
+    tags=["auth"],
+    summary="Redefine a senha com o token do e-mail",
+    description=(
+        "Consome o link. Em caso de sucesso, TODAS as sessões em aberto são "
+        "encerradas e o bloqueio do django-axes é limpo."
+    ),
+    request=PasswordResetConfirmSerializer,
+    responses={
+        204: OpenApiResponse(description="Senha redefinida."),
+        400: OpenApiResponse(description="Link inválido ou senha recusada."),
+    },
+)
+class PasswordResetConfirmView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [RecuperacaoDeSenhaThrottle]
+
+    def post(self, request):
+        serializer = PasswordResetConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data["user"]
+        user.set_password(serializer.validated_data["password"])
+        user.save(update_fields=["password"])
+
+        # O token morre aqui, sozinho: o PasswordResetTokenGenerator deriva o
+        # hash da senha atual, e a senha acabou de mudar. Uso único sem tabela,
+        # sem coluna e sem rotina de limpeza.
+
+        _encerrar_sessoes(user)
+
+        # Quem esqueceu a senha erra várias vezes ANTES de pedir o link — e com
+        # AXES_FAILURE_LIMIT=5 chega ao fim do fluxo ainda bloqueado, com a senha
+        # nova em mãos e um 403 na cara, sem entender por quê. Limpar aqui é o
+        # que faz o fluxo terminar de verdade.
+        axes_reset(username=user.email)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _encerrar_sessoes(user) -> None:
+    """
+    Blacklist de todo refresh token em aberto do usuário (RS07).
+
+    Sem isto, quem roubou um refresh continua dentro por 7 dias **justamente
+    depois** de a vítima trocar a senha por suspeitar do roubo — que é o único
+    momento em que ela acha que resolveu o problema. Trocar a senha sem cortar
+    as sessões é dar uma sensação de segurança que não corresponde a nada.
+
+    `get_or_create` porque um token já na blacklist (logout anterior) não é erro:
+    o efeito desejado já está satisfeito.
+    """
+    for outstanding in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=outstanding)
