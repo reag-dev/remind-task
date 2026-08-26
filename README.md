@@ -791,7 +791,7 @@ curl -c cookies.txt -X POST http://localhost:8000/api/auth/login/ \
 
 - **Argon2id** como hasher primário; senha validada contra tamanho mínimo, lista de senhas comuns e similaridade com e-mail/nome.
 - **Refresh token só em cookie `httpOnly`**, com `path=/api/auth/` — não trafega nas rotas de dados e é invisível para JavaScript. O access (15 min) fica em memória no cliente.
-- **Rotação + blacklist** de refresh: cada renovação queima o token anterior, e o logout invalida de fato.
+- **Rotação + blacklist** de refresh: cada renovação queima o token anterior, e o logout invalida de fato. Como o token anterior morre, duas renovações simultâneas derrubariam a sessão — o cliente serializa em dois escopos: *single-flight* para as chamadas da mesma aba e `navigator.locks` **entre abas**, porque a variável de módulo do single-flight não atravessa aba e o cookie sim ([`frontend/src/auth/refresh.ts`](frontend/src/auth/refresh.ts)). Aparelhos diferentes não se afetam: cada um tem seu cookie e sua linha em `OutstandingToken`.
 - **E-mail único case-insensitive no banco**, via collation não-determinística — não dá para cadastrar `Ana@x.com` e `ana@x.com` nem inserindo direto no Postgres.
 - **django-axes** bloqueia a combinação IP+usuário após 5 falhas (429 por 15 min). Ver a armadilha do `ATOMIC_REQUESTS` em [`docs/data-model.md`](docs/data-model.md#armadilhas-encontradas-na-implementação).
 - **Recurso alheio responde 404, nunca 403** — 403 confirmaria que o recurso existe e entregaria informação a quem sonda ids (RS04). Vale também para coleções aninhadas: as colunas de uma tabela que não é sua não existem.
