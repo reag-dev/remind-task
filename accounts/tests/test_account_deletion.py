@@ -17,7 +17,7 @@ import pytest
 from django.core import mail
 from django.urls import reverse
 
-from alerts.models import Alert, AlertRule, AlertStatus
+from alerts.models import Alert, AlertChannel, AlertRule, AlertStatus
 from records.models import Record
 from tables.models import Table
 
@@ -29,7 +29,17 @@ ME = reverse("accounts:me")
 @pytest.fixture
 def conta_com_dados(user, table, columns, record):
     """Usuário com uma linha em cada uma das tabelas que o cascade deve levar."""
-    regra = AlertRule.objects.create(table=table, offset_days=3)
+    # A regra padrao ja existe quando esta fixture roda: o save da coluna de
+    # vencimento dispara o signal que chama `ensure_default_rule`, e a fixture
+    # `table` tem `alert_lead_days=3` — criar (table, 3, in_app) de novo viola
+    # `alert_rules_unique`. Reaproveitar e o que o teste quer de verdade: o que
+    # importa e existir UMA linha de regra para o cascade ter o que levar.
+    regra, _ = AlertRule.objects.get_or_create(
+        table=table,
+        offset_days=3,
+        channel=AlertChannel.IN_APP,
+        defaults={"user_id": user.pk},
+    )
     Alert.objects.create(
         record=record,
         rule=regra,
@@ -67,7 +77,9 @@ def test_senha_errada_nao_apaga(auth_client, user):
     assert type(user).objects.filter(pk=user.pk).exists()
 
 
-def test_anonimo_nao_apaga(api_client):
+    resposta = api_client.delete(ME, {"password": "seja-la-o-que-for"}, format="json")
+
+    assert resposta.status_code == 401
     assert api_client.delete(ME, {"password": "seja-la-o-que-for"}, format="json").status_code == 401
 
 
@@ -91,27 +103,42 @@ def test_deletion_leaves_other_user_intact(
     um cascade largo demais passaria despercebido, porque não haveria nada de
     ninguém para sobrar.
     """
-    AlertRule.objects.create(table=other_table, offset_days=1)
+    regra_do_outro = AlertRule.objects.create(table=other_table, offset_days=1)
+    Alert.objects.create(
+        record=other_record,
+        rule=regra_do_outro,
+        user=other_user,
+        trigger_date=date(2026, 8, 20),
+        due_date_snapshot=date(2026, 8, 21),
+        status=AlertStatus.PENDING,
+    )
 
+    # Medido POR USUARIO, nao global. Com contagem global e `- 1` na assercao, o
+    # numero fecha sem dizer de QUAL dos dois a linha saiu — e em `Alert` fechava
+    # com o outro usuario nao tendo alerta nenhum, ou seja, a contraprova mais
+    # importante desta phase estava vazia. O `assert all(...)` abaixo existe para
+    # que ela nunca volte a ser: se faltar dado do outro usuario, o teste acusa.
     antes = {
-        "tables": Table.objects.count(),
-        "records": Record.objects.count(),
-        "rules": AlertRule.objects.count(),
-        "alerts": Alert.objects.count(),
+        "tables": Table.objects.filter(user=other_user).count(),
+        "records": Record.objects.filter(user=other_user).count(),
+        "rules": AlertRule.objects.filter(user=other_user).count(),
+        "alerts": Alert.objects.filter(user=other_user).count(),
     }
+    assert all(antes.values()), f"contraprova sem dados do outro usuario: {antes}"
 
     resposta = authenticate(conta_com_dados).delete(ME, {"password": password}, format="json")
     assert resposta.status_code == 204
 
-    # Do usuário apagado: nada. Do outro: tudo.
+    # Do usuario apagado: nada.
     assert Table.objects.filter(user=conta_com_dados).count() == 0
     assert Record.objects.filter(user=conta_com_dados).count() == 0
     assert AlertRule.objects.filter(user=conta_com_dados).count() == 0
     assert Alert.objects.filter(user=conta_com_dados).count() == 0
 
-    assert Table.objects.filter(user=other_user).count() == antes["tables"] - 1
-    assert Record.objects.filter(user=other_user).count() == antes["records"] - 1
-    assert AlertRule.objects.filter(user=other_user).count() == antes["rules"] - 1
+    # Do outro: tudo, intacto.
+    assert Table.objects.filter(user=other_user).count() == antes["tables"]
+    assert Record.objects.filter(user=other_user).count() == antes["records"]
+    assert AlertRule.objects.filter(user=other_user).count() == antes["rules"]
     assert Alert.objects.filter(user=other_user).count() == antes["alerts"]
     assert type(other_user).objects.filter(pk=other_user.pk).exists()
 
