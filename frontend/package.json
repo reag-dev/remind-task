@@ -11,7 +11,8 @@
     "format": "prettier --write src",
     "api:types": "openapi-typescript http://localhost:8000/api/schema/ -o src/api/schema.d.ts && prettier --write src/api/schema.d.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "estilo:auditar": "node scripts/auditar-estilo.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.101.4",
