@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema, extend_schema_view
 from rest_framework import status, viewsets
@@ -6,7 +7,9 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from core.dates import user_today
 from records.models import Record
+from records.status import DueStatus
 from tables.models import Column, ColumnType, Table
 from tables.serializers import ColumnSerializer, ReorderSerializer, TableSerializer
 
@@ -41,6 +44,38 @@ class TableViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         # O dono vem do token, nunca do corpo da requisição.
         serializer.save(user=self.request.user)
+
+    def get_serializer_context(self):
+        """
+        Anexa `due_summary_map` — contagem de vencidos/vence-hoje/vence-em-breve
+        por tabela, para a lista "Suas tabelas" mostrar isso sem exigir clique
+        em cada tabela (era o ponto cego que motivou este campo: a tela inicial
+        não dizia nada sobre vencimento, o motivo do produto existir).
+
+        UMA query de agregação para TODAS as tabelas do usuário, não uma por
+        tabela — evita N+1 tanto no `list` quanto no `retrieve`.
+        """
+        context = super().get_serializer_context()
+
+        # Só quem realmente mostra o campo paga a query — create/update/destroy
+        # não precisam da contagem.
+        if self.action not in {"list", "retrieve"}:
+            return context
+
+        today = user_today(self.request.user)
+        linhas = (
+            Record.objects.for_user(self.request.user)
+            .with_due_status(today)
+            .exclude(due_status=DueStatus.NO_DUE)
+            .values("table_id", "due_status")
+            .annotate(count=Count("id"))
+        )
+
+        mapa = {}
+        for linha in linhas:
+            mapa.setdefault(linha["table_id"], {})[linha["due_status"]] = linha["count"]
+        context["due_summary_map"] = mapa
+        return context
 
 
 @extend_schema_view(
