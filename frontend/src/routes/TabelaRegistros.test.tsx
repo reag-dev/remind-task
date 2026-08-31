@@ -172,6 +172,9 @@ describe("TabelaRegistros", () => {
       montar();
       const usuario = digitador();
 
+      // O painel de filtros começa recolhido quando a URL não traz filtro
+      // nenhum (FiltroStatus.tsx) — precisa abrir antes de clicar num chip.
+      await usuario.click(await screen.findByRole("button", { name: "Filtros" }));
       await usuario.click(await screen.findByRole("button", { name: "Vencido" }));
 
       await waitFor(() => {
@@ -187,6 +190,7 @@ describe("TabelaRegistros", () => {
       });
       const usuario = digitador();
 
+      await usuario.click(await screen.findByRole("button", { name: "Filtros" }));
       await usuario.click(await screen.findByRole("button", { name: "Vencido" }));
 
       // Manter `page=3` num resultado filtrado menor daria 404, e a tela diria
