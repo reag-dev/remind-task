@@ -7,6 +7,48 @@
   --ok: #0a7c42;
   --erro: #b3261e;
 
+  /* superfícies — cinzas neutros que não estão no --fundo nem no --borda */
+  --sobre-acento: #ffffff;
+  --superficie-sutil: #f3f4f6;
+  --superficie-elevada: #fafbfc;
+  --superposicao: rgb(0 0 0 / 45%);
+
+  /* selos de vencimento (RF10) — um par texto/fundo/borda por estado.
+     O .aviso genérico reaproveita o par "hoje": os dois já eram quase a
+     mesma cor à mão (#8a4b00 aparecia em ambos), então ganhar um token
+     em comum é descrever o que já existia, não desenhar um novo. */
+  --selo-atrasado-texto: #8c1d18;
+  --selo-atrasado-fundo: #fceceb;
+  --selo-atrasado-borda: #f0b4b0;
+  --selo-hoje-texto: #8a4b00;
+  --selo-hoje-fundo: #fff4e5;
+  --selo-hoje-borda: #f2c98a;
+  --selo-em-breve-texto: #7a5c00;
+  --selo-em-breve-fundo: #fffbe6;
+  --selo-em-breve-borda: #e8d68a;
+  --selo-ok-texto: #0a5c33;
+  --selo-ok-fundo: #eaf6ef;
+  --selo-ok-borda: #a9d8bf;
+
+  /* espaçamento — base 0.25rem */
+  --espaco-1: 0.25rem;
+  --espaco-2: 0.5rem;
+  --espaco-3: 0.75rem;
+  --espaco-4: 1rem;
+  --espaco-5: 1.5rem;
+  --espaco-6: 2rem;
+
+  /* tipografia — do rótulo menor (badge) ao destaque de linha (nome-tabela) */
+  --texto-1: 0.75rem;
+  --texto-2: 0.8125rem;
+  --texto-3: 0.875rem;
+  --texto-4: 0.9375rem;
+  --texto-5: 1.125rem;
+
+  --raio: 6px;
+  --raio-grande: 8px;
+  --borda-fina: 1px;
+
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   color: var(--texto);
