@@ -1,6 +1,10 @@
+from datetime import date, timedelta
+
 import pytest
 from django.urls import reverse
+from freezegun import freeze_time
 
+from records.models import Record
 from tables.models import Table
 
 pytestmark = pytest.mark.django_db
@@ -10,6 +14,25 @@ LIST = reverse("tables:table-list")
 
 def detail(table_id):
     return reverse("tables:table-detail", args=[table_id])
+
+
+def make_record(table, due: date | None):
+    """Registro com vencimento na chave da coluna due_date da fixture `columns`."""
+    return Record.objects.create(
+        table=table, data={"data_de_vencimento": due.isoformat() if due else None}
+    )
+
+
+def noon(d: date) -> str:
+    """
+    `d` ao meio-dia UTC, para `freeze_time`.
+
+    Não meia-noite: à meia-noite UTC já é o dia anterior em America/Sao_Paulo
+    (UTC-3), o fuso padrão do fixture `user` — `user_today()` devolveria a
+    data errada, um dia atrás da que os `make_record` acima foram montados
+    para. Mesmo motivo do NOON em records/tests/test_due_status.py.
+    """
+    return f"{d.isoformat()}T12:00:00Z"
 
 
 # ---------------------------------------------------------------- RF03 criação
@@ -118,6 +141,62 @@ def test_deleting_a_table_removes_its_columns(auth_client, table, columns):
     auth_client.delete(detail(table.id))
 
     assert not Column.objects.filter(table_id=table.id).exists()
+
+
+# ---------------------------------------------------------------- due_summary
+
+
+def test_due_summary_counts_overdue_due_today_and_due_soon(authenticate, user, table, columns):
+    today = date(2026, 8, 19)
+    make_record(table, today - timedelta(days=5))  # overdue
+    make_record(table, today - timedelta(days=1))  # overdue
+    make_record(table, today)  # due_today
+    make_record(table, today + timedelta(days=2))  # due_soon (limiar = 3)
+
+    with freeze_time(noon(today)):
+        response = authenticate(user).get(LIST)
+
+    summary = response.data["results"][0]["due_summary"]
+    assert summary == {"overdue": 2, "due_today": 1, "due_soon": 1}
+
+
+def test_due_summary_excludes_on_track_and_no_due(authenticate, user, table, columns):
+    today = date(2026, 8, 19)
+    make_record(table, today + timedelta(days=30))  # on_track
+    make_record(table, None)  # no_due
+
+    with freeze_time(noon(today)):
+        response = authenticate(user).get(LIST)
+
+    assert response.data["results"][0]["due_summary"] == {
+        "overdue": 0,
+        "due_today": 0,
+        "due_soon": 0,
+    }
+
+
+def test_due_summary_is_scoped_per_table(authenticate, user, table, columns):
+    outra = Table.objects.create(user=user, name="Outra tabela", alert_lead_days=3)
+
+    today = date(2026, 8, 19)
+    make_record(table, today - timedelta(days=1))  # overdue só em `table`
+
+    with freeze_time(noon(today)):
+        response = authenticate(user).get(LIST)
+
+    by_id = {row["id"]: row["due_summary"] for row in response.data["results"]}
+    assert by_id[str(table.id)]["overdue"] == 1
+    assert by_id[str(outra.id)] == {"overdue": 0, "due_today": 0, "due_soon": 0}
+
+
+def test_retrieve_includes_due_summary(authenticate, user, table, columns):
+    today = date(2026, 8, 19)
+    make_record(table, today - timedelta(days=1))
+
+    with freeze_time(noon(today)):
+        response = authenticate(user).get(detail(table.id))
+
+    assert response.data["due_summary"]["overdue"] == 1
 
 
 # ---------------------------------------------------------------- autenticação

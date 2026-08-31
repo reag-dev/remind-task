@@ -13,6 +13,7 @@ function tabela(parcial: Partial<Record<string, unknown>> = {}) {
     description: "",
     alert_lead_days: 3,
     columns: [{ id: "c1" }, { id: "c2" }],
+    due_summary: { overdue: 0, due_today: 0, due_soon: 0 },
     created_at: "2026-08-01T12:00:00Z",
     updated_at: "2026-08-01T12:00:00Z",
     ...parcial,
@@ -53,6 +54,46 @@ describe("Tabelas", () => {
     renderizar(<Tabelas />);
 
     expect(await screen.findByText(/Nenhuma tabela ainda/)).toBeInTheDocument();
+  });
+
+  it("não mostra selo de vencimento quando nada precisa de atenção", async () => {
+    servidor.use(listaCom(tabela()));
+    renderizar(<Tabelas />);
+
+    await screen.findByRole("link", { name: "Contratos" });
+    expect(screen.queryByText(/atrasad|vence/)).not.toBeInTheDocument();
+  });
+
+  it("mostra o selo de atrasados quando há vencidos", async () => {
+    servidor.use(
+      listaCom(
+        tabela({ due_summary: { overdue: 2, due_today: 1, due_soon: 3 } }),
+      ),
+    );
+    renderizar(<Tabelas />);
+
+    // Atrasado é o mais urgente: aparece sozinho, mesmo com os outros > 0 —
+    // um resumo com os três números repetiria o que a tabela já mostra.
+    expect(await screen.findByText("2 atrasados")).toBeInTheDocument();
+    expect(screen.queryByText(/vence/)).not.toBeInTheDocument();
+  });
+
+  it("mostra o selo de vence hoje quando não há atrasados", async () => {
+    servidor.use(
+      listaCom(tabela({ due_summary: { overdue: 0, due_today: 1, due_soon: 4 } })),
+    );
+    renderizar(<Tabelas />);
+
+    expect(await screen.findByText("1 vence hoje")).toBeInTheDocument();
+  });
+
+  it("mostra o selo de vence em breve quando só isso está pendente", async () => {
+    servidor.use(
+      listaCom(tabela({ due_summary: { overdue: 0, due_today: 0, due_soon: 2 } })),
+    );
+    renderizar(<Tabelas />);
+
+    expect(await screen.findByText("2 vencem em breve")).toBeInTheDocument();
   });
 
   it("mostra erro recuperável quando a listagem falha", async () => {

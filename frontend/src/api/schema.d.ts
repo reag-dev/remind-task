@@ -565,6 +565,19 @@ export interface components {
       /** Format: date-time */
       readonly updated_at: string;
     };
+    /**
+     * @description Forma de `TableSerializer.due_summary` — só para o schema OpenAPI.
+     *
+     *     Sem isto, drf-spectacular não sabe o que um `SerializerMethodField` cru
+     *     devolve e cai para `string`: o `schema.d.ts` gerado mentiria sobre o
+     *     tipo, e o frontend tipado leria `table.due_summary.overdue` como erro de
+     *     tipo (ou pior, sem erro nenhum se alguém tivesse tipado à mão).
+     */
+    DueSummary: {
+      overdue: number;
+      due_today: number;
+      due_soon: number;
+    };
     /** @description Adiciona o usuário ao corpo da resposta de login. */
     Login: {
       email: string;
@@ -741,6 +754,7 @@ export interface components {
       /** Dias de antecedência do alerta */
       alert_lead_days?: number;
       readonly columns?: components["schemas"]["Column"][];
+      readonly due_summary?: components["schemas"]["DueSummary"];
       /** Format: date-time */
       readonly created_at?: string;
       /** Format: date-time */
@@ -816,6 +830,7 @@ export interface components {
       /** Dias de antecedência do alerta */
       alert_lead_days?: number;
       readonly columns: components["schemas"]["Column"][];
+      readonly due_summary: components["schemas"]["DueSummary"];
       /** Format: date-time */
       readonly created_at: string;
       /** Format: date-time */

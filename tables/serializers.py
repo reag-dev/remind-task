@@ -1,7 +1,23 @@
 from django.db.models import Max
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from tables.models import Column, ColumnType, Table
+
+
+class DueSummarySerializer(serializers.Serializer):
+    """
+    Forma de `TableSerializer.due_summary` — só para o schema OpenAPI.
+
+    Sem isto, drf-spectacular não sabe o que um `SerializerMethodField` cru
+    devolve e cai para `string`: o `schema.d.ts` gerado mentiria sobre o
+    tipo, e o frontend tipado leria `table.due_summary.overdue` como erro de
+    tipo (ou pior, sem erro nenhum se alguém tivesse tipado à mão).
+    """
+
+    overdue = serializers.IntegerField()
+    due_today = serializers.IntegerField()
+    due_soon = serializers.IntegerField()
 
 
 class ColumnSerializer(serializers.ModelSerializer):
@@ -104,6 +120,7 @@ class ColumnSerializer(serializers.ModelSerializer):
 
 class TableSerializer(serializers.ModelSerializer):
     columns = ColumnSerializer(many=True, read_only=True)
+    due_summary = serializers.SerializerMethodField()
 
     class Meta:
         model = Table
@@ -113,10 +130,29 @@ class TableSerializer(serializers.ModelSerializer):
             "description",
             "alert_lead_days",
             "columns",
+            "due_summary",
             "created_at",
             "updated_at",
         )
-        read_only_fields = ("id", "columns", "created_at", "updated_at")
+        read_only_fields = ("id", "columns", "due_summary", "created_at", "updated_at")
+
+    @extend_schema_field(DueSummarySerializer)
+    def get_due_summary(self, obj):
+        """
+        `{overdue, due_today, due_soon}` — só os estados que pedem atenção.
+        `on_track`/`no_due` não entram: a tela de "Suas tabelas" quer dizer o
+        que precisa de ação, não o total de registros.
+
+        Vem de `due_summary_map` no contexto (uma query para todas as tabelas
+        do usuário, montada em `TableViewSet.get_serializer_context`) — nunca
+        calculado aqui, que rodaria uma query por tabela.
+        """
+        contagens = self.context.get("due_summary_map", {}).get(obj.id, {})
+        return {
+            "overdue": contagens.get("overdue", 0),
+            "due_today": contagens.get("due_today", 0),
+            "due_soon": contagens.get("due_soon", 0),
+        }
 
     def validate_name(self, value):
         value = value.strip()

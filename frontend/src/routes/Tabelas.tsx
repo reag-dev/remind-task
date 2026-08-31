@@ -69,9 +69,12 @@ function LinhaDeTabela({ tabela, onExcluir }: { tabela: Tabela; onExcluir: () =>
       ) : (
         <>
           <div>
-            <Link to={`/tabelas/${tabela.id}`} className="nome-tabela">
-              {tabela.name}
-            </Link>
+            <div className="titulo-com-acao">
+              <Link to={`/tabelas/${tabela.id}`} className="nome-tabela">
+                {tabela.name}
+              </Link>
+              <ResumoVencimento resumo={tabela.due_summary} />
+            </div>
             {tabela.description && <p className="sutil">{tabela.description}</p>}
             <p className="sutil meta">
               {tabela.columns.length} {tabela.columns.length === 1 ? "coluna" : "colunas"}{" "}
@@ -95,6 +98,42 @@ function LinhaDeTabela({ tabela, onExcluir }: { tabela: Tabela; onExcluir: () =>
       )}
     </li>
   );
+}
+
+/**
+ * Selo agregado de vencimento por tabela — o motivo deste componente
+ * existir: "Suas tabelas" era a primeira tela depois do login e não dizia
+ * nada sobre o que está vencendo, obrigando a entrar em cada tabela para
+ * descobrir. Reaproveita a mesma classe `.selo-*` do grid (SeloStatus.tsx) —
+ * cor e contraste já resolvidos ali, não é estilo novo.
+ *
+ * Um selo só, o mais urgente: atrasado > vence hoje > vence em breve > nada.
+ * Uma lista com "2 atrasados, 1 vence hoje, 3 em breve" repetiria o que a
+ * tabela em si já mostra — aqui é sinal de "precisa entrar agora ou não".
+ */
+function ResumoVencimento({ resumo }: { resumo: Tabela["due_summary"] }) {
+  if (resumo.overdue > 0) {
+    return (
+      <span className="selo selo-overdue">
+        {resumo.overdue} {resumo.overdue === 1 ? "atrasado" : "atrasados"}
+      </span>
+    );
+  }
+  if (resumo.due_today > 0) {
+    return (
+      <span className="selo selo-due_today">
+        {resumo.due_today} {resumo.due_today === 1 ? "vence hoje" : "vencem hoje"}
+      </span>
+    );
+  }
+  if (resumo.due_soon > 0) {
+    return (
+      <span className="selo selo-due_soon">
+        {resumo.due_soon} {resumo.due_soon === 1 ? "vence" : "vencem"} em breve
+      </span>
+    );
+  }
+  return null;
 }
 
 function FormularioDeNome({ tabela, onSair }: { tabela: Tabela; onSair: () => void }) {
