@@ -451,26 +451,26 @@ label.caixa input {
 
 .rolagem-horizontal {
   overflow-x: auto;
-  margin-top: 1.5rem;
+  margin-top: var(--espaco-5);
 }
 
 table.grid {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.94rem;
+  font-size: var(--texto-4);
 }
 
 table.grid th,
 table.grid td {
   text-align: left;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid var(--borda);
+  padding: var(--espaco-2) var(--espaco-3);
+  border-bottom: var(--borda-fina) solid var(--borda);
   vertical-align: middle;
   white-space: nowrap;
 }
 
 table.grid th {
-  font-size: 0.82rem;
+  font-size: var(--texto-2);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--sutil);
@@ -478,15 +478,26 @@ table.grid th {
 }
 
 table.grid tbody tr:hover {
-  background: #fafbfc;
+  background: var(--superficie-elevada);
+}
+
+/* Alinhamento por tipo de coluna: número lido mais rápido à direita, data
+   com largura estável (tabular-nums evita que a coluna "respire" a cada
+   linha conforme o dígito muda). `colunasDoGrid` é quem decide a classe. */
+.col-numero {
+  text-align: right;
+}
+
+.col-data {
+  font-variant-numeric: tabular-nums;
 }
 
 .chip {
   display: inline-block;
-  padding: 0.05rem 0.5rem;
-  border: 1px solid var(--borda);
+  padding: 0.05rem var(--espaco-2);
+  border: var(--borda-fina) solid var(--borda);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: var(--texto-3);
 }
 
 .mascara {
@@ -497,7 +508,7 @@ table.grid tbody tr:hover {
 .revelado {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: var(--espaco-1);
 }
 
 /* --- selos de vencimento (RF10) ---
@@ -507,40 +518,40 @@ table.grid tbody tr:hover {
 
 .selo {
   display: inline-block;
-  padding: 0.1rem 0.55rem;
+  padding: 0.1rem var(--espaco-2);
   border-radius: 999px;
-  font-size: 0.85rem;
-  border: 1px solid;
+  font-size: var(--texto-3);
+  border: var(--borda-fina) solid;
 }
 
 .selo-overdue {
-  color: #8c1d18;
-  background: #fceceb;
-  border-color: #f0b4b0;
+  color: var(--selo-atrasado-texto);
+  background: var(--selo-atrasado-fundo);
+  border-color: var(--selo-atrasado-borda);
 }
 
 .selo-due_today {
-  color: #8a4b00;
-  background: #fff4e5;
-  border-color: #f2c98a;
+  color: var(--selo-hoje-texto);
+  background: var(--selo-hoje-fundo);
+  border-color: var(--selo-hoje-borda);
 }
 
 .selo-due_soon {
-  color: #7a5c00;
-  background: #fffbe6;
-  border-color: #e8d68a;
+  color: var(--selo-em-breve-texto);
+  background: var(--selo-em-breve-fundo);
+  border-color: var(--selo-em-breve-borda);
 }
 
 .selo-on_track {
-  color: #0a5c33;
-  background: #eaf6ef;
-  border-color: #a9d8bf;
+  color: var(--selo-ok-texto);
+  background: var(--selo-ok-fundo);
+  border-color: var(--selo-ok-borda);
 }
 
 .selo-no_due,
 .selo-desconhecido {
   color: var(--sutil);
-  background: #f4f5f6;
+  background: var(--superficie-sutil);
   border-color: var(--borda);
 }
 

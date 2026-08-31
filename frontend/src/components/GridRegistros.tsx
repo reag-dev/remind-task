@@ -36,6 +36,18 @@ function mapaDeOrdenacao(colunas: Coluna[]): Record<string, CampoOrdenavel> {
   return mapa;
 }
 
+/**
+ * Classe de alinhamento por tipo de coluna (Phase 4 do plano de design):
+ * número à direita, data em largura estável. `status` e `acoes` não vêm de
+ * `colunas` — não têm tipo, e ficam com o alinhamento padrão à esquerda.
+ */
+function classeDaColuna(colunas: Coluna[], id: string): string | undefined {
+  const tipo = colunas.find((coluna) => coluna.key === id)?.type;
+  if (tipo === "number") return "col-numero";
+  if (tipo === "date" || tipo === "datetime" || tipo === "due_date") return "col-data";
+  return undefined;
+}
+
 export function GridRegistros({
   colunas,
   registros,
@@ -94,6 +106,7 @@ export function GridRegistros({
                   <th
                     key={cabecalho.id}
                     scope="col"
+                    className={classeDaColuna(colunas, cabecalho.column.id)}
                     // `aria-sort` é o que um leitor de tela usa para anunciar a
                     // ordenação. A setinha visual não diz nada para quem não vê.
                     aria-sort={
@@ -132,7 +145,7 @@ export function GridRegistros({
                   `recursosDoGrid`. O v9 nao expoe o metodo, e o erro aparece
                   na compilacao em vez de virar undefined em runtime. */}
               {linha.getAllCells().map((celula) => (
-                <td key={celula.id}>
+                <td key={celula.id} className={classeDaColuna(colunas, celula.column.id)}>
                   <tabela.FlexRender cell={celula} />
                 </td>
               ))}
