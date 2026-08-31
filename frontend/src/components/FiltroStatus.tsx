@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { DUE_STATUS, ROTULO_DUE_STATUS, type DueStatus } from "../api/tipos.ts";
 
 type Props = {
@@ -19,8 +21,38 @@ export function FiltroStatus({ selecionados, ate, de, onStatus, onIntervalo }: P
 
   const temFiltro = selecionados.length > 0 || ate !== null || de !== null;
 
+  // Aberto de saída quando a URL já chega com filtro (voltar, link colado).
+  // Depois disso é o usuário quem decide — fechar sozinho ao limpar os
+  // filtros escondería o painel debaixo de quem ainda está olhando para ele.
+  const [expandido, setExpandido] = useState(temFiltro);
+
+  if (!expandido) {
+    return (
+      <button
+        type="button"
+        className="secundario"
+        aria-expanded="false"
+        onClick={() => setExpandido(true)}
+      >
+        Filtros{temFiltro ? ` (${selecionados.length + (de !== null || ate !== null ? 1 : 0)})` : ""}
+      </button>
+    );
+  }
+
   return (
     <section className="filtros" aria-label="Filtros">
+      <div className="titulo-com-acao">
+        <span className="sutil">Filtros</span>
+        <button
+          type="button"
+          className="ligacao"
+          aria-expanded="true"
+          onClick={() => setExpandido(false)}
+        >
+          Ocultar
+        </button>
+      </div>
+
       {/* `group` e não uma lista de checkboxes soltos: um leitor de tela anuncia
           "Status, grupo" e depois cada opção, em vez de cinco caixas sem
           contexto no meio da página. */}

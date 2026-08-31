@@ -412,20 +412,20 @@ label.caixa input {
 .lista-colunas {
   list-style: none;
   padding: 0;
-  margin: 1.5rem 0 0;
+  margin: var(--espaco-5) 0 0;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: var(--espaco-2);
   counter-reset: coluna;
 }
 
 .linha-coluna {
   display: flex;
   align-items: center;
-  gap: 0.85rem;
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  padding: 0.75rem 1rem;
+  gap: var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-3) var(--espaco-4);
 }
 
 .coluna-info {
@@ -446,13 +446,17 @@ label.caixa input {
 .ordenar {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: var(--espaco-1);
   flex-shrink: 0;
 }
 
+/* Alvo de toque maior que o botão secundário padrão: são dois botões
+   pequenos lado a lado numa lista densa, e a seta sozinha (sem rótulo
+   visível) já pede uma área de clique generosa para compensar. */
 .ordenar button {
-  padding: 0.1rem 0.45rem;
-  line-height: 1.3;
+  padding: var(--espaco-1) var(--espaco-3);
+  font-size: var(--texto-5);
+  line-height: 1.2;
 }
 
 /* ---------------------------------------------------------- grid */
