@@ -7,6 +7,48 @@
   --ok: #0a7c42;
   --erro: #b3261e;
 
+  /* superfícies — cinzas neutros que não estão no --fundo nem no --borda */
+  --sobre-acento: #ffffff;
+  --superficie-sutil: #f3f4f6;
+  --superficie-elevada: #fafbfc;
+  --superposicao: rgb(0 0 0 / 45%);
+
+  /* selos de vencimento (RF10) — um par texto/fundo/borda por estado.
+     O .aviso genérico reaproveita o par "hoje": os dois já eram quase a
+     mesma cor à mão (#8a4b00 aparecia em ambos), então ganhar um token
+     em comum é descrever o que já existia, não desenhar um novo. */
+  --selo-atrasado-texto: #8c1d18;
+  --selo-atrasado-fundo: #fceceb;
+  --selo-atrasado-borda: #f0b4b0;
+  --selo-hoje-texto: #8a4b00;
+  --selo-hoje-fundo: #fff4e5;
+  --selo-hoje-borda: #f2c98a;
+  --selo-em-breve-texto: #7a5c00;
+  --selo-em-breve-fundo: #fffbe6;
+  --selo-em-breve-borda: #e8d68a;
+  --selo-ok-texto: #0a5c33;
+  --selo-ok-fundo: #eaf6ef;
+  --selo-ok-borda: #a9d8bf;
+
+  /* espaçamento — base 0.25rem */
+  --espaco-1: 0.25rem;
+  --espaco-2: 0.5rem;
+  --espaco-3: 0.75rem;
+  --espaco-4: 1rem;
+  --espaco-5: 1.5rem;
+  --espaco-6: 2rem;
+
+  /* tipografia — do rótulo menor (badge) ao destaque de linha (nome-tabela) */
+  --texto-1: 0.75rem;
+  --texto-2: 0.8125rem;
+  --texto-3: 0.875rem;
+  --texto-4: 0.9375rem;
+  --texto-5: 1.125rem;
+
+  --raio: 6px;
+  --raio-grande: 8px;
+  --borda-fina: 1px;
+
   font-family: system-ui, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   color: var(--texto);
@@ -40,28 +82,34 @@ body {
 }
 
 .formulario input {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
-.formulario input:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
   /* Contorno explícito: alguns resets apagam o padrão do browser e a navegação
-     por teclado fica sem indicação de foco. */
+     por teclado fica sem indicação de foco. Não escopado a `.formulario`: os
+     campos de `.formulario-inline` (busca, filtros) e `.paginacao-controles`
+     usam o mesmo molde de campo da Phase 2 e precisam do mesmo anel — antes
+     ficavam no azul padrão do browser, que destoa do resto. Vale dentro de
+     `<dialog>` também; o seletor não depende de ancestral. */
   outline: 2px solid var(--acento);
   outline-offset: 2px;
 }
 
 button {
-  margin-top: 1.25rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  margin-top: var(--espaco-5);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid transparent;
+  border-radius: var(--raio);
   background: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
   font: inherit;
   cursor: pointer;
 }
@@ -77,47 +125,54 @@ button:disabled {
 
 .erro {
   color: var(--erro);
-  margin: 0.5rem 0 0;
+  margin: var(--espaco-2) 0 0;
 }
 
 ul.erro {
-  padding-left: 1.1rem;
+  padding-left: var(--espaco-4);
 }
 
 .carregando {
-  margin: 4rem auto;
+  margin: calc(var(--espaco-6) * 2) auto;
   max-width: 26rem;
-  padding: 0 1rem;
+  padding: 0 var(--espaco-4);
   color: var(--sutil);
 }
 
 /* ---------------------------------------------------------- moldura */
 
 .cabecalho {
+  border-bottom: var(--borda-fina) solid var(--borda);
+}
+
+.cabecalho-interno {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--borda);
+  gap: var(--espaco-4);
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--espaco-3) var(--espaco-5);
 }
 
 .cabecalho-direita {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--espaco-3);
 }
 
 .marca {
-  font-weight: 700;
+  font-weight: 600;
   color: inherit;
   text-decoration: none;
 }
 
+/* Largura única com `.cabecalho-interno`: o cabeçalho fica de ponta a
+   ponta (a borda), mas o conteúdo dele alinha com `.conteudo` abaixo. */
 .conteudo {
   max-width: 52rem;
-  margin: 2rem auto;
-  padding: 0 1.25rem;
+  margin: var(--espaco-6) auto;
+  padding: 0 var(--espaco-5);
 }
 
 .sutil {
@@ -127,16 +182,24 @@ ul.erro {
 
 .vazio {
   color: var(--sutil);
-  border: 1px dashed var(--borda);
-  border-radius: 8px;
-  padding: 1.25rem;
+  border: var(--borda-fina) dashed var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-4);
 }
 
 .titulo-com-acao {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--espaco-4);
+}
+
+/* Zera a margem padrão do browser no título: numa fileira com o botão ao
+   lado, ela sobrava como um salto vertical que `align-items` não resolve —
+   margem cresce a caixa do item, não desloca o conteúdo dentro dela. */
+.titulo-com-acao h1,
+.titulo-com-acao h2 {
+  margin: 0;
 }
 
 /* ---------------------------------------------------------- botões */
@@ -145,8 +208,8 @@ ul.erro {
 button.secundario,
 button.destrutivo {
   display: inline-block;
-  padding: 0.45rem 0.85rem;
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border-radius: var(--raio);
   font: inherit;
   cursor: pointer;
   text-decoration: none;
@@ -155,20 +218,20 @@ button.destrutivo {
 
 .botao {
   background: var(--acento);
-  color: #fff;
-  border: 1px solid transparent;
+  color: var(--sobre-acento);
+  border: var(--borda-fina) solid transparent;
 }
 
 button.secundario {
   background: transparent;
   color: var(--texto);
-  border: 1px solid var(--borda);
+  border: var(--borda-fina) solid var(--borda);
 }
 
 button.destrutivo {
   background: transparent;
   color: var(--erro);
-  border: 1px solid var(--erro);
+  border: var(--borda-fina) solid var(--erro);
 }
 
 button.ligacao {
@@ -233,9 +296,9 @@ button.ligacao {
 
 .formulario-inline input {
   flex: 1 1 12rem;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
@@ -244,9 +307,9 @@ button.ligacao {
 }
 
 .formulario textarea {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
   resize: vertical;
 }
@@ -254,14 +317,14 @@ button.ligacao {
 /* ---------------------------------------------------------- diálogo */
 
 .dialogo {
-  border: 1px solid var(--borda);
-  border-radius: 10px;
-  padding: 1.5rem;
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-5);
   max-width: 30rem;
 }
 
 .dialogo::backdrop {
-  background: rgb(0 0 0 / 45%);
+  background: var(--superposicao);
 }
 
 .dialogo h2 {
@@ -271,8 +334,8 @@ button.ligacao {
 .dialogo-acoes {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-5);
 }
 
 /* Visível para leitor de tela, invisível na tela. Um `display: none` sumiria
@@ -291,10 +354,10 @@ button.ligacao {
 /* ---------------------------------------------------------- colunas */
 
 .cartao {
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  padding: 1.25rem;
-  margin: 1.5rem 0;
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-4);
+  margin: var(--espaco-5) 0;
   max-width: none;
 }
 
@@ -303,23 +366,23 @@ button.ligacao {
 }
 
 .formulario select {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
 .formulario select:disabled {
-  background: #f3f4f6;
+  background: var(--superficie-sutil);
   color: var(--sutil);
 }
 
 label.caixa {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--espaco-2);
   font-weight: 600;
-  margin-top: 1rem;
+  margin-top: var(--espaco-4);
 }
 
 label.caixa input {
@@ -328,20 +391,22 @@ label.caixa input {
 
 .acoes-formulario {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1.5rem;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-5);
 }
 
 .acoes-formulario button {
   margin-top: 0;
 }
 
+/* Mesma família do selo "hoje": ver o comentário no :root sobre reaproveitar
+   o par em vez de manter uma segunda cor de aviso quase igual. */
 .aviso {
-  border: 1px solid #f0c36d;
-  background: #fff8e6;
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
-  margin: 1rem 0;
+  border: var(--borda-fina) solid var(--selo-hoje-borda);
+  background: var(--selo-hoje-fundo);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-3) var(--espaco-4);
+  margin: var(--espaco-4) 0;
 }
 
 .lista-colunas {
@@ -373,8 +438,8 @@ label.caixa input {
 }
 
 .coluna-info code {
-  background: #f3f4f6;
-  padding: 0 0.25rem;
+  background: var(--superficie-sutil);
+  padding: 0 var(--espaco-1);
   border-radius: 3px;
 }
 
@@ -394,26 +459,26 @@ label.caixa input {
 
 .rolagem-horizontal {
   overflow-x: auto;
-  margin-top: 1.5rem;
+  margin-top: var(--espaco-5);
 }
 
 table.grid {
   border-collapse: collapse;
   width: 100%;
-  font-size: 0.94rem;
+  font-size: var(--texto-4);
 }
 
 table.grid th,
 table.grid td {
   text-align: left;
-  padding: 0.55rem 0.7rem;
-  border-bottom: 1px solid var(--borda);
+  padding: var(--espaco-2) var(--espaco-3);
+  border-bottom: var(--borda-fina) solid var(--borda);
   vertical-align: middle;
   white-space: nowrap;
 }
 
 table.grid th {
-  font-size: 0.82rem;
+  font-size: var(--texto-2);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   color: var(--sutil);
@@ -421,15 +486,26 @@ table.grid th {
 }
 
 table.grid tbody tr:hover {
-  background: #fafbfc;
+  background: var(--superficie-elevada);
+}
+
+/* Alinhamento por tipo de coluna: número lido mais rápido à direita, data
+   com largura estável (tabular-nums evita que a coluna "respire" a cada
+   linha conforme o dígito muda). `colunasDoGrid` é quem decide a classe. */
+.col-numero {
+  text-align: right;
+}
+
+.col-data {
+  font-variant-numeric: tabular-nums;
 }
 
 .chip {
   display: inline-block;
-  padding: 0.05rem 0.5rem;
-  border: 1px solid var(--borda);
+  padding: 0.05rem var(--espaco-2);
+  border: var(--borda-fina) solid var(--borda);
   border-radius: 999px;
-  font-size: 0.85rem;
+  font-size: var(--texto-3);
 }
 
 .mascara {
@@ -440,7 +516,7 @@ table.grid tbody tr:hover {
 .revelado {
   display: inline-flex;
   align-items: baseline;
-  gap: 0.4rem;
+  gap: var(--espaco-1);
 }
 
 /* --- selos de vencimento (RF10) ---
@@ -450,40 +526,40 @@ table.grid tbody tr:hover {
 
 .selo {
   display: inline-block;
-  padding: 0.1rem 0.55rem;
+  padding: 0.1rem var(--espaco-2);
   border-radius: 999px;
-  font-size: 0.85rem;
-  border: 1px solid;
+  font-size: var(--texto-3);
+  border: var(--borda-fina) solid;
 }
 
 .selo-overdue {
-  color: #8c1d18;
-  background: #fceceb;
-  border-color: #f0b4b0;
+  color: var(--selo-atrasado-texto);
+  background: var(--selo-atrasado-fundo);
+  border-color: var(--selo-atrasado-borda);
 }
 
 .selo-due_today {
-  color: #8a4b00;
-  background: #fff4e5;
-  border-color: #f2c98a;
+  color: var(--selo-hoje-texto);
+  background: var(--selo-hoje-fundo);
+  border-color: var(--selo-hoje-borda);
 }
 
 .selo-due_soon {
-  color: #7a5c00;
-  background: #fffbe6;
-  border-color: #e8d68a;
+  color: var(--selo-em-breve-texto);
+  background: var(--selo-em-breve-fundo);
+  border-color: var(--selo-em-breve-borda);
 }
 
 .selo-on_track {
-  color: #0a5c33;
-  background: #eaf6ef;
-  border-color: #a9d8bf;
+  color: var(--selo-ok-texto);
+  background: var(--selo-ok-fundo);
+  border-color: var(--selo-ok-borda);
 }
 
 .selo-no_due,
 .selo-desconhecido {
   color: var(--sutil);
-  background: #f4f5f6;
+  background: var(--superficie-sutil);
   border-color: var(--borda);
 }
 
@@ -528,7 +604,7 @@ table.grid tbody tr:hover {
 .filtro-chip.ativo {
   background: var(--acento);
   border-color: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
 }
 
 .filtro-datas input {
@@ -598,8 +674,8 @@ table.grid tbody tr:hover {
   padding: 0 0.35rem;
   border-radius: 999px;
   background: var(--erro);
-  color: #fff;
-  font-size: 0.75rem;
+  color: var(--sobre-acento);
+  font-size: var(--texto-1);
   line-height: 1.35rem;
   text-align: center;
 }
@@ -634,8 +710,8 @@ table.grid tbody tr:hover {
 }
 
 .aviso-inline {
-  color: #8a4b00;
-  font-size: 0.88rem;
+  color: var(--selo-hoje-texto);
+  font-size: var(--texto-3);
 }
 
 .linha-regra {

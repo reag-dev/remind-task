@@ -10,22 +10,24 @@ export function Layout() {
   return (
     <>
       <header className="cabecalho">
-        <Link to="/" className="marca">
-          remind-task
-        </Link>
-        <div className="cabecalho-direita">
-          <BadgeAlertas />
-          {estado.nome === "autenticado" && (
-            // O e-mail vira o link para a conta: é onde o usuário procura por
-            // "meus dados" antes de procurar um menu, e evita mais um item no
-            // cabeçalho para uma tela que se visita duas vezes por ano.
-            <Link to="/conta" className="sutil">
-              {estado.usuario.email}
-            </Link>
-          )}
-          <button type="button" className="secundario" onClick={() => void sair()}>
-            Sair
-          </button>
+        <div className="cabecalho-interno">
+          <Link to="/" className="marca">
+            remind-task
+          </Link>
+          <div className="cabecalho-direita">
+            <BadgeAlertas />
+            {estado.nome === "autenticado" && (
+              // O e-mail vira o link para a conta: é onde o usuário procura por
+              // "meus dados" antes de procurar um menu, e evita mais um item no
+              // cabeçalho para uma tela que se visita duas vezes por ano.
+              <Link to="/conta" className="sutil">
+                {estado.usuario.email}
+              </Link>
+            )}
+            <button type="button" className="secundario" onClick={() => void sair()}>
+              Sair
+            </button>
+          </div>
         </div>
       </header>
       <main className="conteudo">

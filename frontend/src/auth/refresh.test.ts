@@ -66,6 +66,88 @@ describe("renovarAccessToken", () => {
     await expect(renovarAccessToken()).resolves.toBeNull();
   });
 
+  describe("entre abas", () => {
+    /**
+     * O jsdom não implementa Web Locks, então o caminho que roda em produção
+     * não existiria nos testes. Estes casos instalam um `LockManager` de
+     * mentira para exercitá-lo — sem isso a serialização entre abas estaria no
+     * código e fora da suíte.
+     */
+    type PedirLock = (
+      nome: string,
+      opcoes: LockOptions,
+      callback: (lock: Lock | null) => Promise<unknown>,
+    ) => Promise<unknown>;
+
+    function instalarLocks(request: PedirLock) {
+      const original = Object.getOwnPropertyDescriptor(navigator, "locks");
+      Object.defineProperty(navigator, "locks", {
+        value: { request },
+        configurable: true,
+      });
+      return () => {
+        if (original) Object.defineProperty(navigator, "locks", original);
+        else Reflect.deleteProperty(navigator, "locks");
+      };
+    }
+
+    it("espera o lock antes de renovar, em vez de correr com a outra aba", async () => {
+      const ordem: string[] = [];
+      servidor.use(
+        http.post(`${API}/auth/refresh/`, () => {
+          ordem.push("renovou");
+          return HttpResponse.json({ access: "token-novo" });
+        }),
+      );
+
+      // Simula a outra aba segurando o lock: a concessão demora.
+      const restaurar = instalarLocks(async (nome, _opcoes, callback) => {
+        ordem.push(`pediu:${nome}`);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        ordem.push("concedeu");
+        return callback(null);
+      });
+
+      try {
+        await expect(renovarAccessToken()).resolves.toBe("token-novo");
+      } finally {
+        restaurar();
+      }
+
+      // O `renovou` DEPOIS do `concedeu` é a prova: a requisição não saiu
+      // enquanto a outra aba tinha o lock. Invertido, a corrida está de volta.
+      expect(ordem).toEqual([
+        "pediu:remind-task:renovar-access-token",
+        "concedeu",
+        "renovou",
+      ]);
+    });
+
+    it("renova assim mesmo quando o lock não é concedido", async () => {
+      const chamadas = vi.fn();
+      servidor.use(
+        http.post(`${API}/auth/refresh/`, () => {
+          chamadas();
+          return HttpResponse.json({ access: "token-novo" });
+        }),
+      );
+
+      const restaurar = instalarLocks(() => {
+        throw new DOMException("abortado", "AbortError");
+      });
+
+      try {
+        // Sem lock volta-se ao risco antigo, que é intermitente. Deslogar aqui
+        // seria trocar um defeito raro por um certo.
+        await expect(renovarAccessToken()).resolves.toBe("token-novo");
+      } finally {
+        restaurar();
+      }
+
+      expect(chamadas).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it("envia credenciais, senão o cookie httpOnly não acompanha", async () => {
     let comCredenciais: RequestCredentials | undefined;
     servidor.use(
