@@ -119,17 +119,17 @@ button:disabled {
 
 .erro {
   color: var(--erro);
-  margin: 0.5rem 0 0;
+  margin: var(--espaco-2) 0 0;
 }
 
 ul.erro {
-  padding-left: 1.1rem;
+  padding-left: var(--espaco-4);
 }
 
 .carregando {
-  margin: 4rem auto;
+  margin: calc(var(--espaco-6) * 2) auto;
   max-width: 26rem;
-  padding: 0 1rem;
+  padding: 0 var(--espaco-4);
   color: var(--sutil);
 }
 
@@ -176,9 +176,9 @@ ul.erro {
 
 .vazio {
   color: var(--sutil);
-  border: 1px dashed var(--borda);
-  border-radius: 8px;
-  padding: 1.25rem;
+  border: var(--borda-fina) dashed var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-4);
 }
 
 .titulo-com-acao {
@@ -393,12 +393,14 @@ label.caixa input {
   margin-top: 0;
 }
 
+/* Mesma família do selo "hoje": ver o comentário no :root sobre reaproveitar
+   o par em vez de manter uma segunda cor de aviso quase igual. */
 .aviso {
-  border: 1px solid #f0c36d;
-  background: #fff8e6;
-  border-radius: 8px;
-  padding: 0.85rem 1rem;
-  margin: 1rem 0;
+  border: var(--borda-fina) solid var(--selo-hoje-borda);
+  background: var(--selo-hoje-fundo);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-3) var(--espaco-4);
+  margin: var(--espaco-4) 0;
 }
 
 .lista-colunas {
@@ -702,8 +704,8 @@ table.grid tbody tr:hover {
 }
 
 .aviso-inline {
-  color: #8a4b00;
-  font-size: 0.88rem;
+  color: var(--selo-hoje-texto);
+  font-size: var(--texto-3);
 }
 
 .linha-regra {
