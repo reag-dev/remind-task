@@ -1,8 +1,10 @@
 # Plan: remind-task — Design simples e minimalista
 
 **Date:** 2026-08-26
-**Status:** Phase 0 **concluída** em 2026-08-26 — linha de base medida abaixo.
-Phases 1-6 pendentes.
+**Status:** **concluído** em 2026-08-31 — Phases 0-6 todas feitas. Linha de
+base medida abaixo; resultado final: 24 → 0 cores fora do `:root`, 0 pares de
+contraste abaixo do mínimo (dois níveis agora, 4.5:1/3:1), 246 testes de
+frontend verdes.
 
 ## Linha de base (medida, não estimada)
 
@@ -134,7 +136,7 @@ espaçamentos crus e as razões de contraste, e sai com código 1.
 
 ---
 
-### Phase 1 — Tokens completos
+### Phase 1 — Tokens completos 🟢 concluída 2026-08-31
 
 **Objective:** um vocabulário fechado, para as fases seguintes só consumirem.
 
@@ -158,7 +160,7 @@ está sendo desenhada em vez de descrita — parar e reduzir a paleta primeiro.
 
 ---
 
-### Phase 2 — Primitivas: botão, campo, cartão, diálogo
+### Phase 2 — Primitivas: botão, campo, cartão, diálogo 🟢 concluída 2026-08-31
 
 **Objective:** os elementos que aparecem em toda tela passam a sair do mesmo
 molde.
@@ -181,7 +183,7 @@ molde.
 
 ---
 
-### Phase 3 — Moldura: cabeçalho, largura e ritmo vertical
+### Phase 3 — Moldura: cabeçalho, largura e ritmo vertical 🟢 concluída 2026-08-31
 
 **Objective:** o enquadramento que dá a sensação de "minimalista" — espaço, não
 enfeite.
@@ -203,7 +205,7 @@ ou role)
 
 ---
 
-### Phase 4 — O grid e os selos de vencimento
+### Phase 4 — O grid e os selos de vencimento 🟢 concluída 2026-08-31
 
 **Objective:** a razão de o produto existir — "abrir a tela e ver o que está
 vencendo" (spec, seção 12).
@@ -231,7 +233,7 @@ perguntar.
 
 ---
 
-### Phase 5 — Estados: vazio, carregando, erro
+### Phase 5 — Estados: vazio, carregando, erro 🟢 concluída 2026-08-31
 
 **Objective:** as três telas que todo mundo esquece e que definem se o produto
 parece acabado.
@@ -252,7 +254,23 @@ classe faltar: `frontend/src/routes/Tabelas.tsx`,
 
 ---
 
-### Phase 6 — Contraste e foco, medidos
+### Phase 6 — Contraste e foco, medidos 🟢 concluída 2026-08-31
+
+**Decisão tomada na execução:** o contraste de TEXTO ganhou dois níveis
+(4.5:1 normal, 3:1 texto grande — WCAG §1.4.3) e passou a reprovar por
+padrão, sem precisar de `--tudo`; espaço fora da escala continua atrás da
+flag, porque ainda sobram ~39 valores crus fora do escopo das Phases 1-5 e
+barrar o build por eles hoje trocaria a régua por um muro.
+
+Contraste de BORDA contra o próprio preenchimento (WCAG 1.4.11, "bordas de
+estado") ficou **de fora**, deliberadamente: testado nos selos de
+vencimento, a borda tonal contra o fundo tonal do mesmo selo mede bem
+abaixo de 3:1, mas os dois foram desenhados tonais de propósito — o estado
+já é distinguível por texto do rótulo, cor do texto (4.5:1+) e o
+preenchimento contra a página. Forçar 3:1 na borda teria imposto uma
+paleta mais contrastada sem pedido de produto para isso. Fica documentado
+no cabeçalho do script como item de inspeção manual, não de gate
+automático.
 
 **Objective:** fechar com prova, não com impressão.
 

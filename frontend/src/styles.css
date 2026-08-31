@@ -88,11 +88,17 @@ body {
   font: inherit;
 }
 
-.formulario input:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
 button:focus-visible,
 a:focus-visible {
   /* Contorno explícito: alguns resets apagam o padrão do browser e a navegação
-     por teclado fica sem indicação de foco. */
+     por teclado fica sem indicação de foco. Não escopado a `.formulario`: os
+     campos de `.formulario-inline` (busca, filtros) e `.paginacao-controles`
+     usam o mesmo molde de campo da Phase 2 e precisam do mesmo anel — antes
+     ficavam no azul padrão do browser, que destoa do resto. Vale dentro de
+     `<dialog>` também; o seletor não depende de ancestral. */
   outline: 2px solid var(--acento);
   outline-offset: 2px;
 }
@@ -432,8 +438,8 @@ label.caixa input {
 }
 
 .coluna-info code {
-  background: #f3f4f6;
-  padding: 0 0.25rem;
+  background: var(--superficie-sutil);
+  padding: 0 var(--espaco-1);
   border-radius: 3px;
 }
 
@@ -598,7 +604,7 @@ table.grid tbody tr:hover {
 .filtro-chip.ativo {
   background: var(--acento);
   border-color: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
 }
 
 .filtro-datas input {
@@ -668,8 +674,8 @@ table.grid tbody tr:hover {
   padding: 0 0.35rem;
   border-radius: 999px;
   background: var(--erro);
-  color: #fff;
-  font-size: 0.75rem;
+  color: var(--sobre-acento);
+  font-size: var(--texto-1);
   line-height: 1.35rem;
   text-align: center;
 }

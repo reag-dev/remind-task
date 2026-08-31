@@ -34,9 +34,28 @@
  *   1  há violação
  *   2  o arquivo de estilo não foi encontrado
  *
- * Na Phase 0 só as cores fora do token reprovam — é a linha de base, e reprovar
- * tudo de uma vez transformaria o script num muro em vez de uma régua. A Phase 6
- * liga o resto com `--tudo`.
+ * Na Phase 0 só as cores fora do token reprovavam — era a linha de base, e
+ * reprovar tudo de uma vez transformaria o script num muro em vez de uma
+ * régua. A Phase 6 liga o CONTRASTE por padrão (é medição de acessibilidade,
+ * não preferência de estilo — não faz sentido deixar opcional). Espaço fora
+ * da escala continua atrás de `--tudo`: ainda sobra espaçamento cru fora do
+ * escopo das Phases 1-5, e barrar o build por ele hoje trocaria a régua por
+ * um muro de novo.
+ *
+ * CONTRASTE, agora em dois níveis (WCAG 2.1 §1.4.3): 4.5:1 para texto normal,
+ * 3:1 para texto grande — 24px+, ou 18.66px+ em negrito (peso >= 700). O
+ * `font-size`/`font-weight` do MESMO bloco decide qual se aplica; sem
+ * declaração, o padrão é texto normal (o lado seguro).
+ *
+ * ⚠️ Contraste de borda contra o próprio preenchimento (WCAG 1.4.11, "bordas
+ * de estado") continua FORA do que este script mede. Testei a ideia nos
+ * selos de vencimento durante a Phase 6: a borda tonal contra o fundo tonal
+ * do mesmo selo mede bem abaixo de 3:1 — mas ambos foram desenhados tonais de
+ * propósito, e o estado já é distinguível por três canais que o script NÃO
+ * ignora (texto do rótulo, cor do texto a 4.5:1+, e o preenchimento contra a
+ * página). Forçar a borda a 3:1 sozinha teria imposto uma paleta mais
+ * contrastada sem pedido de produto para isso — decisão de design, não
+ * conserto de acessibilidade. Fica para inspeção manual.
  */
 
 import { readFileSync } from "node:fs";
@@ -48,10 +67,13 @@ const ARQUIVO = join(RAIZ, "src", "styles.css");
 
 const TUDO = process.argv.includes("--tudo");
 
-// Mínimos da WCAG 2.1 AA. O 3.0 vale para texto grande (>=18.66px negrito ou
-// >=24px) e para limite de componente — como não dá para saber o tamanho lendo
-// só a declaração de cor, o script cobra 4.5 e diz quando o caso é de fronteira.
-const MINIMO_TEXTO = 4.5;
+// Mínimos da WCAG 2.1 AA (§1.4.3). Texto grande = 24px+, ou 18.66px+ em
+// negrito (peso >= 700) — abaixo disso, o mínimo é o de texto normal.
+const MINIMO_NORMAL = 4.5;
+const MINIMO_GRANDE = 3.0;
+const PX_GRANDE_NORMAL = 24;
+const PX_GRANDE_NEGRITO = 18.66;
+const PESO_NEGRITO = 700;
 
 // ------------------------------------------------------------------ leitura
 
@@ -148,6 +170,16 @@ function paraRgb(valor) {
   return m ? [+m[1], +m[2], +m[3]] : null;
 }
 
+/** `1.125rem` -> 18, `18px` -> 18. Assume raiz em 16px (sem override em `styles.css`). */
+function paraPx(valor) {
+  if (!valor) return null;
+  const v = valor.trim();
+  const rem = v.match(/^(\d*\.?\d+)rem$/);
+  if (rem) return parseFloat(rem[1]) * 16;
+  const px = v.match(/^(\d*\.?\d+)px$/);
+  return px ? parseFloat(px[1]) : null;
+}
+
 /** Luminância relativa, WCAG 2.1. */
 function luminancia([r, g, b]) {
   const c = [r, g, b]
@@ -178,6 +210,8 @@ function paresDeclarados() {
   let inicio = 0;
   let cor = null;
   let fundo = null;
+  let tamanho = null;
+  let peso = null;
 
   linhas.forEach((linha, i) => {
     if (dentroDoRoot(i)) return;
@@ -188,6 +222,8 @@ function paresDeclarados() {
       inicio = i + 1;
       cor = null;
       fundo = null;
+      tamanho = null;
+      peso = null;
       return;
     }
     if (seletor === null) return;
@@ -202,11 +238,21 @@ function paresDeclarados() {
       fundo = resolver(primeiro);
     }
 
+    const mTamanho = linha.match(/^\s*font-size\s*:\s*([^;]+);/);
+    if (mTamanho) tamanho = resolver(mTamanho[1].trim());
+
+    const mPeso = linha.match(/^\s*font-weight\s*:\s*([^;]+);/);
+    if (mPeso) peso = resolver(mPeso[1].trim());
+
     if (/^\s*\}/.test(linha)) {
       if (cor) {
         const a = paraRgb(cor);
         const b = paraRgb(fundo ?? fundoPadrao);
         if (a && b) {
+          const px = paraPx(tamanho);
+          const negrito = peso !== null && parseInt(peso, 10) >= PESO_NEGRITO;
+          const grande =
+            px !== null && (px >= PX_GRANDE_NORMAL || (negrito && px >= PX_GRANDE_NEGRITO));
           pares.push({
             seletor,
             linha: inicio,
@@ -214,6 +260,8 @@ function paresDeclarados() {
             fundo: fundo ?? fundoPadrao,
             herdado: !fundo,
             razao: razao(a, b),
+            grande,
+            minimo: grande ? MINIMO_GRANDE : MINIMO_NORMAL,
           });
         }
       }
@@ -225,7 +273,7 @@ function paresDeclarados() {
 }
 
 const pares = paresDeclarados();
-const contrasteReprovado = pares.filter((p) => p.razao < MINIMO_TEXTO);
+const contrasteReprovado = pares.filter((p) => p.razao < p.minimo);
 
 // ------------------------------------------------------------------- saída
 
@@ -248,11 +296,11 @@ if (espacosForaDaEscala.length > 12) {
 }
 
 console.log(
-  `\n3. CONTRASTE ................. ${n(contrasteReprovado.length)} abaixo de ${MINIMO_TEXTO}:1 (de ${pares.length} pares lidos)`,
+  `\n3. CONTRASTE ................. ${n(contrasteReprovado.length)} abaixo do mínimo (${MINIMO_NORMAL}:1 texto normal, ${MINIMO_GRANDE}:1 texto grande — de ${pares.length} pares lidos)`,
 );
 for (const p of pares.sort((a, b) => a.razao - b.razao).slice(0, 12)) {
-  const marca = p.razao < MINIMO_TEXTO ? "REPROVA" : "  ok   ";
-  const nota = p.herdado ? " (fundo herdado de --fundo)" : "";
+  const marca = p.razao < p.minimo ? "REPROVA" : "  ok   ";
+  const nota = (p.herdado ? " (fundo herdado de --fundo)" : "") + (p.grande ? " (texto grande, min 3:1)" : "");
   console.log(
     `     ${marca} ${p.razao.toFixed(2).padStart(6)}:1  ${p.cor} sobre ${p.fundo}  ${p.seletor}${nota}`,
   );
@@ -264,20 +312,21 @@ const falhas = [];
 if (coresForaDoToken.length > 0) {
   falhas.push(`${coresForaDoToken.length} cores fora do :root`);
 }
-if (TUDO) {
-  if (espacosForaDaEscala.length > 0) {
-    falhas.push(`${espacosForaDaEscala.length} espaçamentos fora da escala`);
-  }
-  if (contrasteReprovado.length > 0) {
-    falhas.push(`${contrasteReprovado.length} pares abaixo de ${MINIMO_TEXTO}:1`);
-  }
+// Contraste é acessibilidade, não preferência de estilo — reprova sempre,
+// com ou sem `--tudo`. Espaço fora da escala fica atrás de `--tudo`: ainda é
+// diagnóstico, não gate (ver cabeçalho do arquivo).
+if (contrasteReprovado.length > 0) {
+  falhas.push(`${contrasteReprovado.length} pares abaixo do mínimo de contraste`);
+}
+if (TUDO && espacosForaDaEscala.length > 0) {
+  falhas.push(`${espacosForaDaEscala.length} espaçamentos fora da escala`);
 }
 
 console.log("");
 if (falhas.length > 0) {
   console.log(`REPROVADO — ${falhas.join("; ")}`);
-  if (!TUDO) {
-    console.log("(espaço e contraste estão em modo relatório; --tudo os faz reprovar)");
+  if (!TUDO && espacosForaDaEscala.length > 0) {
+    console.log("(espaço ainda está em modo relatório; --tudo o faz reprovar)");
   }
   process.exit(1);
 }
