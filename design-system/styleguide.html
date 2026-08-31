@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>design-system — styleguide</title>
+<link rel="stylesheet" href="./tokens.css" />
+<link rel="stylesheet" href="./components.css" />
+<style>
+  /* Só desta página de demonstração — não faz parte do pacote. */
+  .demo-section { max-width: 60rem; margin: 0 auto var(--space-6); padding: 0 var(--space-5); }
+  .demo-title { font-size: 1.25rem; font-weight: 600; margin: var(--space-6) 0 var(--space-3); }
+  .demo-row { display: flex; flex-wrap: wrap; gap: var(--space-4); align-items: center; margin-bottom: var(--space-3); }
+  .swatch { display: flex; align-items: center; gap: var(--space-3); font-size: var(--font-size-3); }
+  .swatch-color { width: 2.5rem; height: 2.5rem; border-radius: var(--radius-sm); border: var(--border-width) solid var(--color-border); flex-shrink: 0; }
+  .swatch-space { background: var(--color-accent); height: 1rem; }
+  code { background: var(--surface-subtle); padding: 0 var(--space-1); border-radius: 3px; font-size: 0.85em; }
+</style>
+</head>
+<body>
+  <header style="border-bottom: var(--border-width) solid var(--color-border); padding: var(--space-4) var(--space-5); margin-bottom: var(--space-6);">
+    <strong style="font-size: 1.1rem;">@remind-task/design-system</strong>
+    <span class="text-muted" style="margin-left: var(--space-3);">v0.1.0 — styleguide estático, sem build</span>
+  </header>
+
+  <section class="demo-section">
+    <h1 class="demo-title" style="margin-top:0;">Cor</h1>
+    <div class="demo-row">
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-text)"></span>--color-text</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-background)"></span>--color-background</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-text-muted)"></span>--color-text-muted</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-border)"></span>--color-border</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-accent)"></span>--color-accent</div>
+    </div>
+    <div class="demo-row">
+      <div class="swatch"><span class="swatch-color" style="background: var(--surface-subtle)"></span>--surface-subtle</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--surface-elevated)"></span>--surface-elevated</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--overlay)"></span>--overlay</div>
+    </div>
+    <div class="demo-row">
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-danger)"></span>--color-danger</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-danger-text)"></span>--color-danger-text</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-danger-bg)"></span>--color-danger-bg</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-danger-border)"></span>--color-danger-border</div>
+    </div>
+    <div class="demo-row">
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-warning-text)"></span>--color-warning-text</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-warning-bg)"></span>--color-warning-bg</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-warning-border)"></span>--color-warning-border</div>
+    </div>
+    <div class="demo-row">
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-success)"></span>--color-success</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-success-text)"></span>--color-success-text</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-success-bg)"></span>--color-success-bg</div>
+      <div class="swatch"><span class="swatch-color" style="background: var(--color-success-border)"></span>--color-success-border</div>
+    </div>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Espaço</h1>
+    <div class="demo-row" style="align-items: flex-end;">
+      <div><div class="swatch-space" style="width: var(--space-1)"></div><code>--space-1</code></div>
+      <div><div class="swatch-space" style="width: var(--space-2)"></div><code>--space-2</code></div>
+      <div><div class="swatch-space" style="width: var(--space-3)"></div><code>--space-3</code></div>
+      <div><div class="swatch-space" style="width: var(--space-4)"></div><code>--space-4</code></div>
+      <div><div class="swatch-space" style="width: var(--space-5)"></div><code>--space-5</code></div>
+      <div><div class="swatch-space" style="width: var(--space-6)"></div><code>--space-6</code></div>
+    </div>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Tipografia</h1>
+    <p style="font-size: var(--font-size-1)">--font-size-1 — rótulo menor (badge)</p>
+    <p style="font-size: var(--font-size-2)">--font-size-2 — cabeçalho de tabela</p>
+    <p style="font-size: var(--font-size-3)">--font-size-3 — texto secundário (chip, meta)</p>
+    <p style="font-size: var(--font-size-4)">--font-size-4 — texto levemente maior</p>
+    <p style="font-size: var(--font-size-5)">--font-size-5 — destaque de linha</p>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Botões</h1>
+    <div class="demo-row">
+      <button class="button">Primário</button>
+      <button class="button button--secondary">Secundário</button>
+      <button class="button--secondary button--danger">Destrutivo</button>
+      <button class="button--ghost">Botão-link</button>
+      <button class="button" disabled>Desabilitado</button>
+    </div>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Campos</h1>
+    <div class="demo-row">
+      <input class="field" placeholder="Campo de texto" />
+      <select class="select"><option>Selecione</option></select>
+      <select class="select" disabled><option>Desabilitado</option></select>
+    </div>
+    <div class="demo-row">
+      <textarea class="textarea" placeholder="Área de texto" rows="2"></textarea>
+    </div>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Cartão e diálogo</h1>
+    <div class="card" style="max-width: 24rem;">
+      <h2>Título do cartão</h2>
+      <p>Conteúdo dentro de <code>.card</code>.</p>
+    </div>
+    <p style="margin-top: var(--space-4);">
+      <button class="button button--secondary" onclick="document.getElementById('demo-dialog').showModal()">Abrir diálogo</button>
+    </p>
+    <dialog id="demo-dialog" class="dialog">
+      <h2>Confirmar ação</h2>
+      <p>Exemplo de <code>.dialog</code> com <code>::backdrop</code> em <code>--overlay</code>.</p>
+      <div class="dialog-actions">
+        <button class="button button--secondary" onclick="document.getElementById('demo-dialog').close()">Cancelar</button>
+        <button class="button--secondary button--danger" onclick="document.getElementById('demo-dialog').close()">Confirmar</button>
+      </div>
+    </dialog>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Badge, chip e estado vazio</h1>
+    <div class="demo-row">
+      <span class="badge">3</span>
+      <span class="chip">opção selecionada</span>
+    </div>
+    <div class="empty-state">Nenhum item ainda.</div>
+  </section>
+
+  <section class="demo-section">
+    <h1 class="demo-title">Tríade de estado (danger / warning / success)</h1>
+    <div class="demo-row">
+      <span class="badge-status badge-status--danger">Atrasado</span>
+      <span class="badge-status badge-status--warning">Atenção</span>
+      <span class="badge-status badge-status--success">Em dia</span>
+    </div>
+    <div class="alert--danger">Alerta de erro — algo precisa de atenção imediata.</div>
+    <div class="alert--warning" style="margin-top: var(--space-3);">Aviso — vale conferir em breve.</div>
+    <div class="alert--success" style="margin-top: var(--space-3);">Tudo certo por aqui.</div>
+  </section>
+</body>
+</html>

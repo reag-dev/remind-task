@@ -1,0 +1,71 @@
+/**
+ * Tokens — extraídos de frontend/src/styles.css (remind-task), Phases 0-6 do
+ * plano de design (.claude/plans/remind-task-design-2026-08-26.md).
+ *
+ * Todo VALOR de cor/espaço/tipografia/raio é idêntico à fonte. O que mudou
+ * é só o NOME (português específico do remind-task -> inglês genérico) e a
+ * redução dos 4 níveis de "selo de vencimento" (atrasado/hoje/em-breve/ok) à
+ * tríade padrão de UI danger/warning/success — ver design-system/README.md,
+ * seção "O que não veio do remind-task".
+ *
+ * Duas variantes por estado semântico (danger/success), de propósito:
+ *   --color-{danger,success}         sólida/viva — fundo preenchido, texto
+ *                                     puro, borda de botão destrutivo.
+ *   --color-{danger,success}-{text,bg,border}
+ *                                     trio tonal — selo/badge/alerta com
+ *                                     fundo claro. Contraste do trio
+ *                                     verificado (ver scripts/auditar-estilo).
+ * `warning` só tem o trio: o remind-task nunca teve um "aviso sólido", e
+ * este pacote não inventa cor que a fonte não tinha.
+ */
+
+:root {
+  /* ---------------------------------------------------------------- base */
+  --color-text: #1a1c1e;
+  --color-background: #ffffff;
+  --color-text-muted: #5c636a;
+  --color-border: #d7dbdf;
+  --color-accent: #1b4dd8;
+  --color-on-accent: #ffffff;
+
+  --surface-subtle: #f3f4f6;
+  --surface-elevated: #fafbfc;
+  --overlay: rgb(0 0 0 / 45%);
+
+  /* ------------------------------------------------------------- estados */
+  --color-danger: #b3261e;
+  --color-danger-text: #8c1d18;
+  --color-danger-bg: #fceceb;
+  --color-danger-border: #f0b4b0;
+
+  --color-warning-text: #8a4b00;
+  --color-warning-bg: #fff4e5;
+  --color-warning-border: #f2c98a;
+
+  --color-success: #0a7c42;
+  --color-success-text: #0a5c33;
+  --color-success-bg: #eaf6ef;
+  --color-success-border: #a9d8bf;
+
+  /* ---------------------------------------------------- espaço (base 4px) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* -------------------------------------------------------- tipografia */
+  --font-family: system-ui, "Segoe UI", Roboto, sans-serif;
+  --line-height: 1.5;
+  --font-size-1: 0.75rem;
+  --font-size-2: 0.8125rem;
+  --font-size-3: 0.875rem;
+  --font-size-4: 0.9375rem;
+  --font-size-5: 1.125rem;
+
+  /* -------------------------------------------------------------- forma */
+  --radius-sm: 6px;
+  --radius-lg: 8px;
+  --border-width: 1px;
+}
