@@ -571,32 +571,56 @@ table.grid tbody tr:hover {
 
 /* ---------------------------------------------------------- filtros e paginação */
 
+/* `<input>` sem classe própria em BarraBusca.tsx: sem esta regra ele cai no
+   padrão do browser, que destoa de todo o resto do formulário. */
+.barra-busca div[role="search"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-5);
+}
+
+.barra-busca input {
+  flex: 1 1 16rem;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
+  font: inherit;
+}
+
 .filtros {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem 1.5rem;
+  gap: var(--espaco-4) var(--espaco-5);
   align-items: center;
-  margin-top: 1.5rem;
-  padding: 0.85rem 1rem;
-  border: 1px solid var(--borda);
-  border-radius: 8px;
+  margin-top: var(--espaco-5);
+  padding: var(--espaco-3) var(--espaco-4);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
 }
 
 .filtro-status,
 .filtro-datas {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--espaco-1);
   align-items: center;
 }
 
 .filtro-chip {
-  padding: 0.2rem 0.7rem;
-  border: 1px solid var(--borda);
+  padding: 0.2rem var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
   border-radius: 999px;
   background: transparent;
+  /* Sem isto, `color` cai de volta no `button { color: var(--sobre-acento) }`
+     (branco) por herança de cascata — que some contra este fundo
+     transparente. `<button>` não herda `color` do pai como um `<span>`
+     herdaria; sem uma regra própria, ele usa o valor menos específico que
+     casar, que aqui era o branco do botão primário. */
+  color: var(--texto);
   font: inherit;
-  font-size: 0.88rem;
+  font-size: var(--texto-3);
   cursor: pointer;
   margin-top: 0;
 }
@@ -609,8 +633,8 @@ table.grid tbody tr:hover {
 
 .filtro-datas input {
   padding: 0.3rem 0.45rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
