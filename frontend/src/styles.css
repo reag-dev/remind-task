@@ -136,30 +136,37 @@ ul.erro {
 /* ---------------------------------------------------------- moldura */
 
 .cabecalho {
+  border-bottom: var(--borda-fina) solid var(--borda);
+}
+
+.cabecalho-interno {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--borda);
+  gap: var(--espaco-4);
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: var(--espaco-3) var(--espaco-5);
 }
 
 .cabecalho-direita {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--espaco-3);
 }
 
 .marca {
-  font-weight: 700;
+  font-weight: 600;
   color: inherit;
   text-decoration: none;
 }
 
+/* Largura única com `.cabecalho-interno`: o cabeçalho fica de ponta a
+   ponta (a borda), mas o conteúdo dele alinha com `.conteudo` abaixo. */
 .conteudo {
   max-width: 52rem;
-  margin: 2rem auto;
-  padding: 0 1.25rem;
+  margin: var(--espaco-6) auto;
+  padding: 0 var(--espaco-5);
 }
 
 .sutil {
@@ -178,7 +185,15 @@ ul.erro {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: var(--espaco-4);
+}
+
+/* Zera a margem padrão do browser no título: numa fileira com o botão ao
+   lado, ela sobrava como um salto vertical que `align-items` não resolve —
+   margem cresce a caixa do item, não desloca o conteúdo dentro dela. */
+.titulo-com-acao h1,
+.titulo-com-acao h2 {
+  margin: 0;
 }
 
 /* ---------------------------------------------------------- botões */
