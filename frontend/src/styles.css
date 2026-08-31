@@ -82,9 +82,9 @@ body {
 }
 
 .formulario input {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
@@ -98,12 +98,12 @@ a:focus-visible {
 }
 
 button {
-  margin-top: 1.25rem;
-  padding: 0.55rem 1rem;
-  border: 1px solid transparent;
-  border-radius: 6px;
+  margin-top: var(--espaco-5);
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid transparent;
+  border-radius: var(--raio);
   background: var(--acento);
-  color: #fff;
+  color: var(--sobre-acento);
   font: inherit;
   cursor: pointer;
 }
@@ -187,8 +187,8 @@ ul.erro {
 button.secundario,
 button.destrutivo {
   display: inline-block;
-  padding: 0.45rem 0.85rem;
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border-radius: var(--raio);
   font: inherit;
   cursor: pointer;
   text-decoration: none;
@@ -197,20 +197,20 @@ button.destrutivo {
 
 .botao {
   background: var(--acento);
-  color: #fff;
-  border: 1px solid transparent;
+  color: var(--sobre-acento);
+  border: var(--borda-fina) solid transparent;
 }
 
 button.secundario {
   background: transparent;
   color: var(--texto);
-  border: 1px solid var(--borda);
+  border: var(--borda-fina) solid var(--borda);
 }
 
 button.destrutivo {
   background: transparent;
   color: var(--erro);
-  border: 1px solid var(--erro);
+  border: var(--borda-fina) solid var(--erro);
 }
 
 button.ligacao {
@@ -275,9 +275,9 @@ button.ligacao {
 
 .formulario-inline input {
   flex: 1 1 12rem;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
@@ -286,9 +286,9 @@ button.ligacao {
 }
 
 .formulario textarea {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
   resize: vertical;
 }
@@ -296,14 +296,14 @@ button.ligacao {
 /* ---------------------------------------------------------- diálogo */
 
 .dialogo {
-  border: 1px solid var(--borda);
-  border-radius: 10px;
-  padding: 1.5rem;
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-5);
   max-width: 30rem;
 }
 
 .dialogo::backdrop {
-  background: rgb(0 0 0 / 45%);
+  background: var(--superposicao);
 }
 
 .dialogo h2 {
@@ -313,8 +313,8 @@ button.ligacao {
 .dialogo-acoes {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 1.25rem;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-5);
 }
 
 /* Visível para leitor de tela, invisível na tela. Um `display: none` sumiria
@@ -333,10 +333,10 @@ button.ligacao {
 /* ---------------------------------------------------------- colunas */
 
 .cartao {
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  padding: 1.25rem;
-  margin: 1.5rem 0;
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio-grande);
+  padding: var(--espaco-4);
+  margin: var(--espaco-5) 0;
   max-width: none;
 }
 
@@ -345,23 +345,23 @@ button.ligacao {
 }
 
 .formulario select {
-  padding: 0.5rem 0.65rem;
-  border: 1px solid var(--borda);
-  border-radius: 6px;
+  padding: var(--espaco-2) var(--espaco-3);
+  border: var(--borda-fina) solid var(--borda);
+  border-radius: var(--raio);
   font: inherit;
 }
 
 .formulario select:disabled {
-  background: #f3f4f6;
+  background: var(--superficie-sutil);
   color: var(--sutil);
 }
 
 label.caixa {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--espaco-2);
   font-weight: 600;
-  margin-top: 1rem;
+  margin-top: var(--espaco-4);
 }
 
 label.caixa input {
@@ -370,8 +370,8 @@ label.caixa input {
 
 .acoes-formulario {
   display: flex;
-  gap: 0.5rem;
-  margin-top: 1.5rem;
+  gap: var(--espaco-2);
+  margin-top: var(--espaco-5);
 }
 
 .acoes-formulario button {
