@@ -1,0 +1,19 @@
+{
+  "name": "@remind-task/design-system",
+  "version": "0.1.0",
+  "description": "Tokens e primitivas de UI extraídos do remind-task — cor, espaço, tipografia, raio e componentes base (botão, campo, cartão, diálogo, badge, chip, alerta). CSS puro, sem dependência de framework.",
+  "private": true,
+  "files": [
+    "tokens.css",
+    "components.css",
+    "README.md"
+  ],
+  "exports": {
+    "./tokens.css": "./tokens.css",
+    "./components.css": "./components.css"
+  },
+  "scripts": {
+    "auditar": "node scripts/auditar-estilo.mjs",
+    "auditar:tudo": "node scripts/auditar-estilo.mjs --tudo"
+  }
+}
