@@ -44,3 +44,7 @@ whitenoise>=6.7,<7.0
 # config/settings/prod.py, onde a inicialização carrega o mesmo `scrub` do
 # RedactingFilter. Um APM que capture corpo de requisição desfaz o RS05.
 sentry-sdk>=2.0,<3.0
+
+# E-mail via API (Brevo), não mais SMTP puro: a Railway bloqueia toda porta
+# SMTP na saída, e só HTTP(S) atravessa o egress. Ver config/settings/base.py.
+django-anymail>=15.2,<16.0

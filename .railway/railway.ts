@@ -63,32 +63,36 @@ export default defineRailway(() => {
     // — os contadores de throttle precisam ser compartilhados entre os workers.
     CACHE_URL: preserve(),
 
-    // E-mail (Phase 5). Quem ENVIA hoje é o `worker` e o `cron-alertas`; o
-    // `web` passa a enviar na Phase 10 (recuperação de senha). Ficam no bloco
-    // comum porque a credencial é a mesma e separar criaria dois lugares para
-    // rotacionar a API key e um para esquecer.
+    // E-mail (Phase 5, revisado na Phase 10). Quem ENVIA é o `worker`, o
+    // `cron-alertas` E o `web` (recuperação de senha manda o e-mail dentro da
+    // própria requisição). Ficam no bloco comum porque a credencial é a mesma
+    // e separar criaria dois lugares para rotacionar a API key e um para
+    // esquecer.
     //
-    // ⚠️ Em produção o EMAIL_BACKEND já defaulta para SMTP (prod.py). Sem a
-    // senha, todo envio falha e o alerta acaba em FAILED — o que é melhor que
-    // o console, onde o envio "funciona" e ninguém recebe nada.
+    // ⚠️ SMTP PAROU DE FUNCIONAR em produção — não é credencial, é bloqueio de
+    // rede: a Railway derruba toda porta SMTP na saída (25, 465, 587, 2525),
+    // confirmado testando conexão TCP direto de dentro do container `web`. Só
+    // HTTP(S) atravessa o egress, e por isso `prod.py` default para o backend
+    // do Anymail (Brevo), que fala com o provedor por HTTPS.
     //
-    // A implantação usa SMTP do Gmail, e não o Resend que a Phase 0 escolheu.
-    // O motivo é concreto: provedor transacional exige domínio próprio
-    // verificado com SPF/DKIM, e a mesma Phase 0 decidiu ficar só em
-    // `*.up.railway.app`. Sem domínio, o Resend só entrega no endereço do dono
-    // da conta — inútil para usuário real. Uma conta de e-mail comum é um SMTP
-    // legítimo, entrega para qualquer um e não pede domínio.
+    // Brevo e não Resend/Mailgun/SendGrid: os dois primeiros, sem domínio
+    // próprio verificado, só entregam para o dono da conta — inútil para
+    // reset de senha de usuário real (a Phase 0 decidiu ficar só em
+    // `*.up.railway.app`, sem domínio próprio). O Brevo verifica só o
+    // REMETENTE (sem exigir domínio) e entrega para qualquer destinatário. O
+    // SendGrid saiu de cogitação porque o django-anymail parou de testar
+    // contra a API dele.
     //
-    // O código não mudou por causa disso: ele fala SMTP puro, e a amarração a
-    // fornecedor é só a credencial. Ver `.env.prod.example` para o caminho de
-    // volta a um provedor transacional.
-    EMAIL_HOST: preserve(),
-    EMAIL_PORT: preserve(),
-    EMAIL_HOST_USER: preserve(),
-    EMAIL_HOST_PASSWORD: preserve(),
-    // Precisa ser um endereço que o provedor aceite enviar em seu nome.
-    // Qualquer outro é recusado no ENVIO, não na configuração — o serviço sobe
+    // Sem a chave abaixo, todo envio falha e o alerta acaba em FAILED — o que
+    // é melhor que o console, onde o envio "funciona" e ninguém recebe nada.
+    BREVO_API_KEY: preserve(),
+    // Precisa ser o endereço verificado como remetente no Brevo. Qualquer
+    // outro é recusado no ENVIO, não na configuração — o serviço sobe
     // normalmente e só os e-mails falham.
+    //
+    // ⚠️ Risco aceito conscientemente: remetente = Gmail pessoal, sem domínio
+    // próprio, então SPF/DKIM nunca alinham com gmail.com — risco real de cair
+    // em spam. Ver `.env.prod.example` para o raciocínio completo.
     DEFAULT_FROM_EMAIL: preserve(),
   };
 

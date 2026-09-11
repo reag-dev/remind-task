@@ -86,6 +86,9 @@ THIRD_PARTY_APPS = [
     "corsheaders",
     "drf_spectacular",
     "axes",  # RS03: rate limit de login
+    # Só habilita o check de settings do Anymail (ANYMAIL bem formado). Não usa
+    # model, migration nem view daqui — o backend de e-mail funciona sem isto.
+    "anymail",
 ]
 
 LOCAL_APPS = [
@@ -416,6 +419,26 @@ EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", default=10, cast=int)
 # Precisa ser um endereço no domínio verificado no provedor; qualquer outro é
 # recusado no envio, não na configuração.
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", default="alertas@localhost")
+
+# ---------------------------------------------------- e-mail via API (Anymail)
+#
+# SMTP puro parou de servir em produção: a Railway derruba toda porta da
+# família SMTP na saída (25, 465, 587, 2525) — só HTTP(S) atravessa o egress.
+# Confirmado testando conexão TCP direto de dentro do container `web`. Nenhuma
+# credencial resolveria isso — é bloqueio de rede da plataforma, não de conta.
+#
+# A saída é falar com o provedor por HTTPS em vez de SMTP. O Brevo tem plano
+# grátis que verifica só o REMETENTE (sem exigir domínio próprio) e entrega
+# para qualquer destinatário — diferente de Resend/Mailgun, que sem domínio
+# verificado só entregam para o dono da conta. Ver `prod.py` para o
+# EMAIL_BACKEND que liga isto.
+#
+# A chave nunca precisa ser válida para o serviço SUBIR — ela só falha no
+# ENVIO, e `accounts/emails.py` já loga essa falha sem propagar (RS-oráculo de
+# cadastro: a resposta HTTP não pode variar conforme o e-mail existir ou não).
+ANYMAIL = {
+    "BREVO_API_KEY": config("BREVO_API_KEY", default=""),
+}
 
 # Quantas vezes tentar entregar antes de desistir, e o intervalo mínimo entre
 # tentativas. O backoff é exponencial em minutos (2, 4, 8, 16…): provedor fora
