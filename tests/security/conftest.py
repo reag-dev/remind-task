@@ -8,7 +8,7 @@ recurso, não só de tabela.
 """
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -16,8 +16,13 @@ from alerts.models import Alert, AlertRule
 from records.models import Record
 from tables.models import Column, ColumnType, Table
 
-DUE = date(2026, 9, 1)
-TRIGGER = date(2026, 8, 29)
+# Relativas a hoje, e não fixas: uma data fixa no passado é bomba-relógio — o
+# registro deste fixture "vence" sozinho conforme o calendário anda, e os
+# testes que assumem "ainda não está atrasado" começam a falhar sem que nada
+# no código tenha mudado. `alert_lead_days=3` (abaixo) é o que faz TRIGGER
+# nascer 3 dias antes de DUE — mantido aqui em vez de recalculado no teste.
+DUE = date.today() + timedelta(days=30)
+TRIGGER = DUE - timedelta(days=3)
 
 SENSITIVE_VALUE = "111.222.333-44"
 
