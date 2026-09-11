@@ -257,20 +257,35 @@ O que sobra para o painel:
 | `web` e `frontend` | Variavel `PORT` declarada (8000 e 80) | O Railway tira a porta de destino do dominio do `EXPOSE` do Dockerfile mas injeta `PORT=8080` no container. Sem fixar, o processo sobe numa porta e o edge disca outra — e o dominio devolve 502 com a aplicacao de pe e o log limpo |
 | projeto | **Wait for CI** ligado | O Railway observa o branch, nao os checks: sem isto ele implanta um push com o CI vermelho. E o interlock que falta para "CD" significar alguma coisa — o workflow ja roda em todo push para `main` |
 
-Envio de e-mail (Phase 5): a aplicacao fala **SMTP puro**, sem SDK de
-fornecedor — trocar de provedor e trocar `EMAIL_HOST`, `EMAIL_PORT`,
-`EMAIL_HOST_USER` e `EMAIL_HOST_PASSWORD`. A implantacao atual usa **SMTP do
-Gmail** com senha de app.
+Envio de e-mail (Phase 5, revisado na Phase 10): a aplicacao falava **SMTP
+puro**, sem SDK de fornecedor — mas a Railway bloqueia toda porta SMTP na
+saida (25, 465, 587, 2525), confirmado testando conexao TCP direto de dentro
+do container `web`. So HTTP(S) atravessa o egress, entao nenhuma credencial de
+SMTP funciona em producao, de nenhum provedor.
 
-A Phase 0 tinha escolhido Resend, e a escolha caiu na implantacao: provedor
-transacional exige **dominio proprio** verificado com SPF/DKIM, e a mesma
-Phase 0 decidiu ficar so em `*.up.railway.app`. Sem dominio, o Resend so
-entrega no endereco do dono da conta. Detalhes e o caminho de volta em
-[`.env.prod.example`](.env.prod.example).
+A implantacao atual fala com o provedor por **API HTTP**, via
+[django-anymail](https://github.com/anymail/django-anymail), com o
+**Brevo** como ESP: `EMAIL_BACKEND=anymail.backends.brevo.EmailBackend` e a
+chave em `BREVO_API_KEY` (ver `config/settings/base.py`).
+
+Por que Brevo e nao Resend/Mailgun/SendGrid: os dois primeiros, sem
+**dominio proprio** verificado com SPF/DKIM, so entregam no endereco do dono
+da conta — inutil para reset de senha de usuario real (a Phase 0 decidiu
+ficar so em `*.up.railway.app`, sem dominio proprio). O Brevo verifica so o
+**remetente** (sem exigir dominio) e entrega para qualquer destinatario. O
+SendGrid saiu de cogitacao porque o django-anymail parou de testar contra a
+API dele. Detalhes em [`.env.prod.example`](.env.prod.example).
+
+⚠️ Risco aceito conscientemente: o remetente configurado e um Gmail pessoal,
+sem dominio proprio — o SPF de `gmail.com` so autoriza servidor do proprio
+Google, entao nunca alinha com um envio via Brevo. Risco real de cair em spam,
+principalmente em caixa Gmail. Um dominio proprio verificado resolveria isso
+de vez; foi escolha deliberada nao comprar um agora.
 
 ⚠️ Nada na suite de testes revela um provedor mal configurado — eles usam o
 backend `locmem`, que aceita qualquer endereco. O que prova o transporte e um
-envio real.
+envio real: `python manage.py send_test_email seu@email.com` (sem
+`fail_silently` — a falha aparece na hora, nao so no log).
 
 ### 3. Variaveis
 

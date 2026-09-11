@@ -132,14 +132,19 @@ SECURE_REFERRER_POLICY = "same-origin"
 
 # ------------------------------------------------------------------ e-mail
 
-# Em produção o default inverte: SMTP, não console.
+# Em produção o default inverte: transporte de verdade, não console.
 #
 # Herdar o console aqui seria o pior dos mundos — o envio "funcionaria", os
 # alertas passariam a SENT, o log encheria de e-mails bonitos e nenhum usuário
-# receberia nada. Uma falha que se parece com sucesso. Com SMTP, credencial
-# faltando vira erro de entrega, visível no status FAILED e no log.
+# receberia nada. Uma falha que se parece com sucesso.
+#
+# O default NÃO é mais SMTP. A Railway bloqueia toda porta SMTP na saída —
+# testado direto no container: 587/465/25/2525 falham com "Network
+# unreachable", e HTTP(S) passa normal. Nenhuma credencial de SMTP funcionaria
+# aqui, de nenhum provedor. O backend do Anymail fala com o provedor por
+# HTTPS, e por isso sobrevive ao bloqueio; a chave mora em `ANYMAIL` (base.py).
 EMAIL_BACKEND = config(
-    "EMAIL_BACKEND", default="django.core.mail.backends.smtp.EmailBackend"
+    "EMAIL_BACKEND", default="anymail.backends.brevo.EmailBackend"
 )
 
 # Conexões persistentes: o papel e a GUC do RLS são SET LOCAL, desfeitos no

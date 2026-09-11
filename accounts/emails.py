@@ -18,12 +18,16 @@ cliente de e-mail transformar o link em algo que o usuário não consegue
 inspecionar antes de clicar, que é exatamente o hábito que se quer do outro lado.
 """
 
+import logging
+
 from django.conf import settings
 from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
+
+logger = logging.getLogger(__name__)
 
 
 def montar_link(user) -> str:
@@ -60,19 +64,27 @@ def enviar(user) -> None:
     """
     Entrega a mensagem.
 
-    `fail_silently=True`, ao contrário do envio de alertas — e a diferença é
-    deliberada. Lá, a falha precisa subir para a task contar a tentativa e
-    reagendar. Aqui, deixar a exceção subir mudaria a RESPOSTA da requisição
-    conforme o e-mail existisse ou não: endereço sem conta nunca tenta enviar e
-    devolve 204; endereço com conta, num momento de SMTP fora do ar, devolveria
-    500. O endpoint viraria justamente o oráculo de cadastro que ele foi
-    desenhado para não ser.
+    A exceção do backend NUNCA sobe daqui — ao contrário do envio de alertas, e
+    a diferença é deliberada. Lá, a falha precisa subir para a task contar a
+    tentativa e reagendar. Aqui, deixar a exceção subir mudaria a RESPOSTA da
+    requisição conforme o e-mail existisse ou não: endereço sem conta nunca
+    tenta enviar e devolve 204; endereço com conta, num momento de provedor
+    fora do ar, devolveria 500. O endpoint viraria justamente o oráculo de
+    cadastro que ele foi desenhado para não ser.
 
-    A falha não some: `send()` com `fail_silently=True` engole a exceção do
-    backend, e o log de erro é o registro. Quem opera o sistema vê; quem sonda
-    de fora, não.
+    A falha não some: entra no log (e, com SENTRY_DSN configurado, no Sentry)
+    por `pk`, nunca por e-mail — RS05. `fail_silently=True` sozinho NÃO bastava
+    aqui: o backend de e-mail em uso pode levantar exceção de configuração
+    ANTES do envio (chave ausente, por exemplo), fora do que `fail_silently`
+    cobre — só o try/except abaixo garante que nada escapa.
     """
-    montar(user).send(fail_silently=True)
+    try:
+        montar(user).send(fail_silently=False)
+    except Exception:
+        logger.exception(
+            "Falha ao enviar e-mail de recuperação de senha (user pk=%s).",
+            user.pk,
+        )
 
 
 # ------------------------------------------------- exclusão de conta (Phase 11)
@@ -107,9 +119,14 @@ def enviar_exclusao(email: str, nome: str, quando, resumo: dict) -> None:
     """
     Entrega o aviso.
 
-    `fail_silently=True` como no de recuperação, por um motivo diferente: aqui a
-    conta JÁ FOI apagada quando o envio acontece. Deixar a exceção do SMTP subir
-    não desfaria nada — só transformaria uma exclusão bem-sucedida em 500 na
-    tela de quem a pediu, sugerindo que ela falhou. O erro vai para o log.
+    A exceção nunca sobe, como no de recuperação, por um motivo diferente: aqui
+    a conta JÁ FOI apagada quando o envio acontece. Deixar a exceção do backend
+    subir não desfaria nada — só transformaria uma exclusão bem-sucedida em 500
+    na tela de quem a pediu, sugerindo que ela falhou. O erro vai para o log,
+    sem o e-mail do destinatário na mensagem (RS05: a conta já não existe mais
+    para relacionar o dado a nada).
     """
-    montar_exclusao(email, nome, quando, resumo).send(fail_silently=True)
+    try:
+        montar_exclusao(email, nome, quando, resumo).send(fail_silently=False)
+    except Exception:
+        logger.exception("Falha ao enviar aviso de exclusão de conta.")
