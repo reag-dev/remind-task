@@ -357,8 +357,8 @@ same-origin, porém: aqui o CORS é **real**, não inerte — o browser vê
 final de [`.env.prod.example`](.env.prod.example) para os valores exatos.
 
 ```bash
-cp .env.prod.example .env.prod   # preencher os valores, ver a seção "VPS Hostinger" no arquivo
-docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+cp .env.prod.example .env   # nome fixo — o Compose só lê ".env" por default; ver a seção "VPS Hostinger" no arquivo
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ### 3a. VPS pura — Nginx de borda + TLS
@@ -385,8 +385,12 @@ reescrita no repositório.
 
 Crie um serviço do tipo **Compose** (não "App") — é para isso que ele existe:
 "vários containers fortemente relacionados, implantados juntos". Aponte para
-o repositório e para `docker-compose.prod.yml`. Variáveis de `.env.prod`
-entram pelo editor de ambiente do próprio serviço, não por um arquivo na VPS.
+o repositório e para `docker-compose.prod.yml`. As variáveis entram pelo
+editor de ambiente do próprio serviço — o EasyPanel escreve o conteúdo num
+arquivo `.env` que ele mesmo cria ao lado do compose (é o nome que
+`docker-compose.prod.yml` espera; **medido**: com `env_file: .env.prod` o
+deploy falhava com `env file ... .env.prod not found`, porque o painel nunca
+cria esse nome).
 
 O EasyPanel já tem proxy + TLS automático por domínio (Traefik por baixo) —
 **não precisa do passo 3a**. Cada domínio no painel roteia para **um serviço

@@ -38,6 +38,17 @@ Duas coisas que o plano não previu, achadas rodando a stack de verdade:
    sem mudar os scripts (é a variável que o próprio Compose lê); medido
    funcionando (`backup.sh` gerou dump de 574 bytes contra o `db` do
    `docker-compose.prod.yml` de teste). Documentado no README e na Phase 5.
+4. **`env_file: .env.prod` quebra o deploy real no EasyPanel — erro
+   reportado pelo operador, não achado em teste local.** O EasyPanel roda
+   `docker compose -f docker-compose.prod.yml -f docker-compose.override.yml
+   ... up --build -d` **sem** `--env-file`, então usa o default do próprio
+   Compose: um arquivo chamado `.env` no diretório do projeto, que é onde o
+   painel escreve as variáveis configuradas nele. `.env.prod` nunca existe
+   ali — o deploy falhava direto com `env file ... .env.prod not found`.
+   Corrigido renomeando `env_file: .env.prod` → `env_file: .env` no anchor
+   `x-django` (e os dois `${VAR:?...}` que citavam o nome no texto do erro),
+   e `docker/deploy.sh`/README ajustados para o mesmo nome — que também é
+   compatível com VPS sem painel, sem custo.
 
 Confirmado por medição, não suposição: `docker compose -f
 docker-compose.prod.yml build` (com `base.lock`, sem pytest/ruff na imagem),
@@ -301,9 +312,10 @@ imagem que o CI já testa.
   um processo ocioso batendo a cada 15 min não soma conta extra, então o
   argumento de custo que fez o plano irmão preferir cron não se aplica aqui —
   `beat` é mais simples que reproduzir um cron dentro de um container.
-- `frontend`: `build.target: producao`, `VITE_API_URL` como build-arg fixo em
-  `https://app.exemplo.com/api` (Decisão 1 — mesma origem, path `/api`),
-  publicado só em `127.0.0.1:8080`.
+- `frontend`: `build.target: producao`, `VITE_API_URL` como build-arg fixo
+  (Decisão 1 — `https://api.exemplo.com/api` no caminho com EasyPanel, revisto
+  depois; `https://app.exemplo.com/api` no caminho de domínio único), publicado
+  só em `127.0.0.1:8080`.
 - `db`/`redis`: sem `ports:` publicada para `0.0.0.0` — só a rede interna do
   compose. Volumes nomeados, sem bind mount de código.
 - `restart: unless-stopped` em todos os serviços — sem isso, um `reboot` da
@@ -314,7 +326,7 @@ imagem que o CI já testa.
 
 **Verify:**
 ```bash
-docker compose -f docker-compose.prod.yml --env-file .env.prod config -q   # valida sintaxe e interpolação
+docker compose -f docker-compose.prod.yml config -q   # ".env" (nome fixo) precisa existir ao lado do arquivo
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 curl -fsS http://127.0.0.1:8000/api/health/   # {"status":"ok",...}

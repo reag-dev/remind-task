@@ -6,8 +6,17 @@ name: remind-task-prod
 # imagem é imutável (sem volume de código), `db`/`redis` não publicam porta
 # para a internet, e o frontend serve o `dist/` buildado, não o Vite.
 #
-# Uso: `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`.
-# Ver `docker/deploy.sh` para o fluxo completo (git pull + build + up + gate).
+# Uso: `docker compose -f docker-compose.prod.yml up -d` — `.env` (nome fixo,
+# convenção do próprio Compose) precisa existir ao lado deste arquivo. Ver
+# `docker/deploy.sh` para o fluxo completo numa VPS sem painel (git pull +
+# build + up + gate).
+#
+# `.env`, e não `.env.prod`: o EasyPanel roda `docker compose -f
+# docker-compose.prod.yml ... up --build -d` **sem** `--env-file`, então ele
+# usa o default do próprio Compose — o arquivo chamado `.env` no diretório do
+# projeto, que é onde o EasyPanel escreve as variáveis configuradas no painel.
+# Um `env_file: .env.prod` aqui falha direto com "env file ... not found",
+# medido implantando via EasyPanel: ele nunca cria esse nome.
 
 x-django: &django
   build:
@@ -16,18 +25,18 @@ x-django: &django
     # nem factory-boy. Ver o ARG REQUIREMENTS no Dockerfile.
     args:
       REQUIREMENTS: base.lock
-  env_file: .env.prod
-  # `env_file:` só repassa o que está LITERALMENTE escrito em `.env.prod` — os
+  env_file: .env
+  # `env_file:` só repassa o que está LITERALMENTE escrito em `.env` — os
   # defaults de interpolação do compose (`${POSTGRES_DB:-remind}`) valem para
   # montar o serviço `db` abaixo, mas não vazam para o container do `web` por
-  # conta própria. Sem isto, um `.env.prod` que só declara POSTGRES_PASSWORD
+  # conta própria. Sem isto, um `.env` que só declara POSTGRES_PASSWORD
   # (as outras têm default aceitável) sobe o `db` com usuário/banco "remind" e
   # o `web` sem saber o nome de nenhum dos dois — `decouple` derruba o boot com
   # `POSTGRES_DB not found`, medido rodando esta stack.
   environment:
     POSTGRES_DB: ${POSTGRES_DB:-remind}
     POSTGRES_USER: ${POSTGRES_USER:-remind}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env.prod}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env}
     POSTGRES_HOST: db
   restart: unless-stopped
   depends_on:
@@ -43,7 +52,7 @@ services:
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-remind}
       POSTGRES_USER: ${POSTGRES_USER:-remind}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env}
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro
@@ -101,7 +110,7 @@ services:
         # Mesma origem que o backend (Decisão 1 do plano): o Nginx de borda
         # expõe os dois sob um domínio só, com `/api/` roteado para o `web`.
         # Sem isso o build falha — o Dockerfile exige VITE_API_URL não vazio.
-        VITE_API_URL: "${VITE_API_URL:?defina VITE_API_URL em .env.prod (ex. https://app.exemplo.com/api)}"
+        VITE_API_URL: "${VITE_API_URL:?defina VITE_API_URL em .env (ex. https://app.exemplo.com/api)}"
     restart: unless-stopped
     environment:
       PORT: 80
