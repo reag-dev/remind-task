@@ -1,0 +1,112 @@
+name: remind-task-prod
+
+# Compose de PRODUÇÃO para uma VPS (Hostinger ou qualquer host com Docker) —
+# não confundir com `docker-compose.yml`, que é de desenvolvimento e roda
+# `runserver` com bind mount do código. Os dois não podem se misturar: aqui a
+# imagem é imutável (sem volume de código), `db`/`redis` não publicam porta
+# para a internet, e o frontend serve o `dist/` buildado, não o Vite.
+#
+# Uso: `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`.
+# Ver `docker/deploy.sh` para o fluxo completo (git pull + build + up + gate).
+
+x-django: &django
+  build:
+    context: .
+    # base.lock, não dev.lock: a imagem de produção não carrega pytest, ruff
+    # nem factory-boy. Ver o ARG REQUIREMENTS no Dockerfile.
+    args:
+      REQUIREMENTS: base.lock
+  env_file: .env.prod
+  # `env_file:` só repassa o que está LITERALMENTE escrito em `.env.prod` — os
+  # defaults de interpolação do compose (`${POSTGRES_DB:-remind}`) valem para
+  # montar o serviço `db` abaixo, mas não vazam para o container do `web` por
+  # conta própria. Sem isto, um `.env.prod` que só declara POSTGRES_PASSWORD
+  # (as outras têm default aceitável) sobe o `db` com usuário/banco "remind" e
+  # o `web` sem saber o nome de nenhum dos dois — `decouple` derruba o boot com
+  # `POSTGRES_DB not found`, medido rodando esta stack.
+  environment:
+    POSTGRES_DB: ${POSTGRES_DB:-remind}
+    POSTGRES_USER: ${POSTGRES_USER:-remind}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env.prod}
+    POSTGRES_HOST: db
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-remind}
+      POSTGRES_USER: ${POSTGRES_USER:-remind}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD em .env.prod}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/00-extensions.sql:ro
+    # Sem porta publicada para o host: só quem está na rede do compose fala
+    # com o banco. Nem `web`, nem `worker`, nem ninguém de fora da VPS precisa
+    # de acesso direto — quem precisa investigar entra com
+    # `docker compose -f docker-compose.prod.yml exec db psql ...`.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-remind} -d ${POSTGRES_DB:-remind}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    <<: *django
+    # Publicado só em loopback: quem fala com a internet é o Nginx de borda do
+    # host (Phase 3 do plano), que faz proxy_pass para 127.0.0.1:8000.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  worker:
+    <<: *django
+    command: celery -A config worker -l info
+
+  beat:
+    <<: *django
+    # Substitui o `cron-alertas` do Railway (serviço à parte, com o Start
+    # Command envolto em `sh -c`). Numa VPS de preço fixo, um processo ocioso
+    # 24/7 batendo a cada 15 min não soma conta extra — o argumento de custo
+    # que fez o plano do Railway preferir cron ali não se aplica aqui, e
+    # `beat` é mais simples do que reproduzir um cron dentro de um container.
+    command: celery -A config beat -l info
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      target: producao
+      args:
+        # Mesma origem que o backend (Decisão 1 do plano): o Nginx de borda
+        # expõe os dois sob um domínio só, com `/api/` roteado para o `web`.
+        # Sem isso o build falha — o Dockerfile exige VITE_API_URL não vazio.
+        VITE_API_URL: "${VITE_API_URL:?defina VITE_API_URL em .env.prod (ex. https://app.exemplo.com/api)}"
+    restart: unless-stopped
+    environment:
+      PORT: 80
+    ports:
+      - "127.0.0.1:8080:80"
+
+volumes:
+  pgdata_prod:

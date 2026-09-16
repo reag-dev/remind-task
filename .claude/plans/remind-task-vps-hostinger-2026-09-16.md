@@ -1,10 +1,47 @@
 # Plan: remind-task — Deploy em VPS Hostinger (saindo do Railway)
 
 **Date:** 2026-09-16
-**Status:** draft — nenhuma phase iniciada. Branch: `feat/deploy-vps-hostinger`.
+**Status:** Phases 0-5 (código) implementadas e verificadas em 2026-09-16 —
+build real, stack de produção no ar localmente, health/CORS/cookie/RLS
+confirmados. Branch: `feat/deploy-vps-hostinger`. Falta só o que exige
+infraestrutura real (VPS, domínio, secrets do GitHub) — ver **Correções
+achadas na implementação** abaixo e a Phase 6.
 **Plano irmão:** [`remind-task-producao-2026-08-21.md`](remind-task-producao-2026-08-21.md)
 (Railway, concluído — este plano não o revoga; a Phase 6 decide se o Railway
 é desligado ou mantido em paralelo).
+
+### Correções achadas na implementação (2026-09-16)
+
+Duas coisas que o plano não previu, achadas rodando a stack de verdade:
+
+1. **`env_file:` não propaga os defaults de interpolação do compose.**
+   `POSTGRES_DB`/`POSTGRES_USER` tinham default `remind` só para montar o
+   serviço `db` (`${POSTGRES_DB:-remind}` no `docker-compose.prod.yml`) — o
+   container do `web` recebia só o que está *literalmente* escrito em
+   `.env.prod`, e sem essas duas chaves `decouple` derruba o boot com
+   `POSTGRES_DB not found`. Medido subindo a stack com só `POSTGRES_PASSWORD`
+   declarado. Corrigido com um bloco `environment:` explícito no anchor
+   `x-django`, repetindo os mesmos defaults e fixando `POSTGRES_HOST=db`.
+2. **A Decisão 1 do Phase 0 (`CORS_ALLOWED_ORIGINS` deixa de ser necessário em
+   same-origin) estava errada.** `config/validacao.py` recusa o boot com a
+   lista vazia sem excecionar o caso same-origin — a guarda não distingue os
+   dois. Correção: `.env.prod.example` declara
+   `CORS_ALLOWED_ORIGINS=https://app.exemplo.com` (mesmo domínio do
+   `ALLOWED_HOSTS`), que satisfaz a guarda mesmo sendo inerte em runtime
+   (o browser nunca manda `Origin` em requisição same-origin).
+3. **`docker/backup.sh`/`docker/restore.sh` chamam `docker compose` sem
+   `-f`.** Sem ajuda, resolvem para `docker-compose.yml` (dev) — que não está
+   no ar na VPS. `COMPOSE_FILE=docker-compose.prod.yml` no ambiente resolve
+   sem mudar os scripts (é a variável que o próprio Compose lê); medido
+   funcionando (`backup.sh` gerou dump de 574 bytes contra o `db` do
+   `docker-compose.prod.yml` de teste). Documentado no README e na Phase 5.
+
+Confirmado por medição, não suposição: `docker compose -f
+docker-compose.prod.yml build` (com `base.lock`, sem pytest/ruff na imagem),
+stack no ar com todos os serviços saudáveis, `curl .../api/health/` → `{"status":"ok"}`,
+fallback de SPA → 200, `check --deploy --fail-level WARNING` limpo com chave
+forte, e `AUTH_COOKIE_SAMESITE=Lax` + `ATOMIC_REQUESTS=True` confirmados via
+shell dentro do container `web`.
 
 ## Estado atual (medido em 2026-09-16, não presumido)
 
@@ -102,10 +139,14 @@ decisões incompatíveis descobertas só na Phase 5 dele).
 **Decisão 1 — domínio e cookie.** Recomendação: **um domínio só**
 (`app.exemplo.com`), com o Nginx de borda fazendo reverse-proxy de `/api/` para
 o container `web` e do resto para o container `frontend`. Same-origin de
-verdade: `AUTH_COOKIE_SAMESITE=Lax` funciona sem ressalva, `CORS_ALLOWED_ORIGINS`
-deixa de ser necessário (não há requisição cross-origin), e
-`CSRF_TRUSTED_ORIGINS` continua sendo derivado de `ALLOWED_HOSTS`
-(`prod.py:97-99`, já existe). É o caminho que o plano irmão listou como
+verdade: `AUTH_COOKIE_SAMESITE=Lax` funciona sem ressalva. **Correção achada na
+implementação:** `CORS_ALLOWED_ORIGINS` continua *obrigatório* mesmo
+same-origin — `config/validacao.py` recusa o boot com a lista vazia sem
+excecionar esse caso. Declarar o mesmo domínio (`https://app.exemplo.com`)
+satisfaz a guarda; fica inerte em runtime porque o browser nunca manda
+`Origin` em requisição same-origin. `CSRF_TRUSTED_ORIGINS` continua sendo
+derivado de `ALLOWED_HOSTS` (`prod.py:97-99`, já existe). É o caminho que o
+plano irmão listou como
 alternativa e não escolheu por causa da topologia forçada do Railway — aqui a
 VPS não força nada, então o caminho mais simples fica disponível.
 
@@ -333,6 +374,11 @@ do Railway — só muda onde ele roda, não o que ele faz.
   `DATABASE_URL`/`DESTINO`/`RETENCAO` do ambiente — nenhuma mudança de
   código). Frequência e retenção: mesma do plano irmão, a menos que o volume
   de dados justifique outra.
+  **Achado na implementação:** o script chama `docker compose` sem `-f`, e sem
+  ajuda resolve para `docker-compose.yml` (dev) — que não está no ar na VPS.
+  `COMPOSE_FILE=docker-compose.prod.yml` no ambiente resolve sem tocar no
+  script (é a variável que o próprio Compose lê); no `crontab` precisa estar
+  na própria linha, porque `cron` não carrega shell profile.
 - Destino do arquivo **fora da própria VPS** — copiar para outro lugar (outro
   storage, outra máquina) é o que faz o backup sobreviver a "a VPS morreu",
   que é exatamente o cenário que este backup existe para cobrir (o Railway já
@@ -344,9 +390,10 @@ do Railway — só muda onde ele roda, não o que ele faz.
 
 **Verify:**
 ```bash
+export COMPOSE_FILE=docker-compose.prod.yml
 sh docker/backup.sh              # roda contra o compose de produção da VPS
 sh docker/restore.sh --ensaio     # mesmo ensaio do plano irmão, agora aqui
-crontab -l | grep backup.sh       # confirma agendamento
+crontab -l | grep backup.sh       # confirma agendamento, com COMPOSE_FILE na linha
 ```
 **Done When:** existe um backup fora da VPS com menos de 24h de idade, e o
 ensaio de restore saiu com `rc=0`.

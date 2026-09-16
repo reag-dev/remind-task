@@ -476,3 +476,45 @@ jobs:
           echo "::error::$alvo não reportou status ok em 10 minutos. Última resposta: ${corpo:-<sem resposta>}"
           echo "503 com \"redis\":\"down\" é o cache fora — o serviço responde, alertas e limite de taxa é que não."
           exit 1
+
+  # --------------------------------------------------------- deploy — VPS
+  #
+  # Diferente do `pos-deploy` acima: ali o Railway já implantou sozinho (o
+  # push para `main` dispara o deploy da plataforma) e o job só observa. Numa
+  # VPS não existe quem observe o branch — então este job É o mecanismo de
+  # deploy, não uma checagem depois de outro implantar.
+  #
+  # Gate igual ao do `pos-deploy`: sem VPS_HOST/VPS_SSH_KEY configurados, avisa
+  # e sai 0. Quem não configurou a VPS não vê o CI vermelho por isso.
+  deploy-vps:
+    name: deploy — VPS Hostinger
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, producao, contrato]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: A VPS está configurada?
+        id: alvo
+        run: |
+          if [ -z "${{ vars.VPS_HOST }}" ] || [ -z "${{ secrets.VPS_SSH_KEY }}" ]; then
+            echo "::warning::VPS_HOST (variável) ou VPS_SSH_KEY (segredo) não configurados — deploy pulado. Configure em Settings > Secrets and variables > Actions."
+            echo "configurado=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "configurado=sim" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ssh do runner, sem action de terceiro: é o mesmo cliente OpenSSH já
+      # presente na imagem ubuntu-latest, sem dependência nova para auditar.
+      - name: Deploy via SSH
+        if: steps.alvo.outputs.configurado == 'sim'
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          VPS_HOST: ${{ vars.VPS_HOST }}
+          VPS_USER: ${{ vars.VPS_USER }}
+          VPS_PATH: ${{ vars.VPS_PATH }}
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_deploy
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_deploy
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh -i ~/.ssh/id_deploy "${VPS_USER:-deploy}@$VPS_HOST" \
+            "cd ${VPS_PATH:-~/remind-task} && sh docker/deploy.sh"

@@ -323,6 +323,103 @@ e aceita o cookie normalmente.
 
 ---
 
+## Deploy em VPS Hostinger
+
+Caminho alternativo ao Railway, para quem prefere (ou precisa) rodar numa VPS
+própria. Plano completo em
+[`.claude/plans/remind-task-vps-hostinger-2026-09-16.md`](.claude/plans/remind-task-vps-hostinger-2026-09-16.md).
+Diferença central: **um domínio só**, roteado por path pelo Nginx do host —
+`/api/` vai para o `web`, o resto vai para o `frontend`. Same-origin de
+verdade, então `AUTH_COOKIE_SAMESITE=Lax` funciona sem a ressalva que o
+Railway exige (dois domínios `*.up.railway.app` distintos).
+
+### 1. Pré-requisitos (fora deste repositório)
+
+VPS com Docker e Docker Compose instalados, acesso SSH por chave, e um
+domínio apontando para o IP da VPS. Nada disso é automatizado por este
+projeto — é ação manual de quem tem acesso à VPS.
+
+### 2. Serviços
+
+`docker-compose.prod.yml` sobe `db` e `redis` em container na própria VPS
+(sem porta publicada para a internet), mais `web` (gunicorn), `worker`
+(Celery) e `beat` (Celery beat — substitui o `cron-alertas` do Railway; numa
+VPS de custo fixo, um processo ocioso a cada 15 min não pesa na conta) e
+`frontend` (nginx servindo o `dist/`, publicado só em loopback).
+
+```bash
+cp .env.prod.example .env.prod   # preencher os valores, ver a seção "VPS Hostinger" no arquivo
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+```
+
+### 3. Nginx de borda + TLS
+
+Roda no **host**, não em container — mais simples de depurar e de renovar
+certificado do que nginx-dentro-de-nginx:
+
+```bash
+sudo apt install nginx certbot python3-certbot-nginx
+sudo cp docker/nginx/app.conf /etc/nginx/sites-available/remind-task   # trocar app.exemplo.com pelo domínio real
+sudo ln -s /etc/nginx/sites-available/remind-task /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d app.exemplo.com   # emite o certificado e reescreve o arquivo com o bloco 443
+```
+
+`docker/nginx/app.conf` é referência versionada — o Certbot reescreve o
+arquivo real no host ao emitir o certificado, então não tente prever essa
+reescrita no repositório.
+
+### 4. Deploy
+
+`docker/deploy.sh` roda **na VPS**: `git pull --ff-only`, build, `up -d`, e um
+`check --deploy` como gate pós-subida (não impede a troca de tráfego, só
+avisa — mesma limitação que o `pos-deploy` do Railway já documenta, sem
+endpoint de versão para provar qual revisão está respondendo).
+
+```bash
+ssh <usuario>@<vps> 'cd ~/remind-task && sh docker/deploy.sh'   # primeira vez, manual
+```
+
+Depois de configurar `VPS_HOST` e `VPS_USER` (Settings → Secrets and
+variables → Actions → **Variables**) e `VPS_SSH_KEY` (mesma tela, em
+**Secrets**) no GitHub, o job `deploy-vps` do CI faz isso automaticamente em
+todo push para `main` com os outros jobs verdes — o mesmo gate por `needs:`
+que o `pos-deploy` do Railway já usa. Sem os secrets/vars configurados, o job
+avisa e sai 0; não trava quem ainda não configurou a VPS.
+
+### 5. Backup
+
+Mesmo `docker/backup.sh`/`docker/restore.sh` do Railway — nenhuma mudança de
+código, só onde rodam. **Medido:** os dois scripts chamam `docker compose`
+sem `-f`, então sem ajuda eles resolvem para `docker-compose.yml` (o de
+desenvolvimento) — que na VPS nem está no ar. `COMPOSE_FILE` é a variável que
+o próprio Docker Compose lê para saber qual arquivo usar; exportá-la faz os
+scripts, sem tocar neles, apontarem para o serviço `db` certo:
+
+```bash
+export COMPOSE_FILE=docker-compose.prod.yml   # no shell da VPS, ou por chamada
+sh docker/backup.sh
+```
+
+Agendar via `crontab` do usuário da VPS — `cron` não lê o shell profile, então
+a variável precisa estar na própria linha:
+
+```
+0 3 * * * cd ~/remind-task && COMPOSE_FILE=docker-compose.prod.yml sh docker/backup.sh >> /var/log/remind-backup.log 2>&1
+```
+
+O destino do arquivo precisa sair da própria VPS (copiar para outro storage)
+para sobreviver ao cenário "a VPS morreu" — sem isso o backup e o banco
+compartilham o mesmo ponto único de falha.
+
+### 6. O que fica de fora
+
+Migrar o banco de produção do Railway para a VPS e decidir se o Railway é
+desligado depois são decisões de operação, com custo mensal dos dois lados
+durante a transição — não são passo de código. Ver Phase 6 do plano.
+
+---
+
 ## Backup e restore
 
 O Railway tira snapshot do Postgres gerenciado, e isso cobre perda de disco —
