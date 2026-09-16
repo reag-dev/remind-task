@@ -25,10 +25,13 @@ Duas coisas que o plano não previu, achadas rodando a stack de verdade:
 2. **A Decisão 1 do Phase 0 (`CORS_ALLOWED_ORIGINS` deixa de ser necessário em
    same-origin) estava errada.** `config/validacao.py` recusa o boot com a
    lista vazia sem excecionar o caso same-origin — a guarda não distingue os
-   dois. Correção: `.env.prod.example` declara
-   `CORS_ALLOWED_ORIGINS=https://app.exemplo.com` (mesmo domínio do
-   `ALLOWED_HOSTS`), que satisfaz a guarda mesmo sendo inerte em runtime
-   (o browser nunca manda `Origin` em requisição same-origin).
+   dois. Isto ficou parcialmente ultrapassado pelo pivô do EasyPanel (abaixo):
+   com dois subdomínios (`api.` e `app.`), o CORS deixou de ser inerte — passou
+   a ser REAL, porque `api.exemplo.com` e `app.exemplo.com` são origens
+   diferentes para o browser mesmo sob o mesmo registrable domain. A correção
+   permanece a mesma na prática (declarar `CORS_ALLOWED_ORIGINS` explicitamente
+   em `.env.prod.example`), só o motivo mudou de "satisfaz a guarda" para
+   "satisfaz a guarda E é necessário de verdade".
 3. **`docker/backup.sh`/`docker/restore.sh` chamam `docker compose` sem
    `-f`.** Sem ajuda, resolvem para `docker-compose.yml` (dev) — que não está
    no ar na VPS. `COMPOSE_FILE=docker-compose.prod.yml` no ambiente resolve
@@ -42,6 +45,64 @@ stack no ar com todos os serviços saudáveis, `curl .../api/health/` → `{"sta
 fallback de SPA → 200, `check --deploy --fail-level WARNING` limpo com chave
 forte, e `AUTH_COOKIE_SAMESITE=Lax` + `ATOMIC_REQUESTS=True` confirmados via
 shell dentro do container `web`.
+
+### Pivô: a VPS é gerenciada por EasyPanel (2026-09-16)
+
+O operador já criou o serviço no EasyPanel como **Compose** (não App) — decisão
+confirmada contra a documentação oficial: "Compose" é para quando a aplicação
+já vem como um `docker-compose.yml` ou quando vários containers relacionados
+devem subir juntos, que é exatamente `web`/`worker`/`beat`/`frontend`/`db`/`redis`.
+`docker-compose.prod.yml` não precisou de nenhuma mudança para isso.
+
+Isso torna **as Phases 3 e 4, como escritas, obsoletas** — não erradas, mas
+resolvidas por uma camada que o plano não previa:
+
+- **Phase 3 (Nginx de borda no host + Certbot) — substituída pelo proxy do
+  próprio EasyPanel.** Ele já roda um proxy (Traefik por baixo) com TLS
+  automático por domínio, configurado no painel — não em arquivo. Medido na
+  documentação: cada domínio roteia para **um serviço interno do Compose**,
+  por porta — dá pra apontar dois domínios para dois serviços diferentes, mas
+  **não é roteamento por path dentro do mesmo domínio** (o que a Decisão 1
+  original assumia). O caminho que o painel oferece de verdade é o que a
+  Decisão 1 já listava como **alternativa**: dois subdomínios do mesmo
+  registrable domain. Ver Decisão 1 revisada, abaixo.
+- **Phase 4 (deploy via SSH + `docker/deploy.sh`) — substituída pelo mecanismo
+  de deploy do próprio EasyPanel.** Ele expõe, por serviço, uma **Deployment
+  Trigger URL** (aba Deployments) — mandar uma requisição pra ela dispara
+  `docker compose up --build -d` no servidor. Escrever SSH + `docker/deploy.sh`
+  por cima seria abrir um SEGUNDO caminho de implantação — o mesmo erro que o
+  plano do Railway já registrou ("`railway up` no CI criaria um segundo
+  caminho"). O gate por CI verde continua possível: em vez de SSH, o job do
+  CI faz `curl` na Trigger URL depois dos outros jobs passarem.
+
+`docker/deploy.sh` continua no repositório como caminho para quem NÃO usa
+EasyPanel (VPS pura, só Docker) — é o que a Phase 4 original documentava, e
+não há motivo para apagá-lo. Mas para esta VPS especificamente, ele não é o
+mecanismo usado.
+
+**Decisão 1 revisada — domínios.** Dois subdomínios do mesmo domínio-raiz,
+cada um roteado por um domínio configurado no painel do EasyPanel:
+
+| Domínio (painel) | Serviço interno | Porta |
+|---|---|---|
+| `api.seudominio.com` | `web` | `8000` |
+| `app.seudominio.com` | `frontend` | `80` |
+
+Continua sendo o mesmo *registrable domain* nos dois lados, então
+`AUTH_COOKIE_SAMESITE=Lax` continua funcionando sem a ressalva de domínios
+distintos que o Railway exigiu. `db` e `redis` não recebem domínio nenhum no
+painel — ficam só na rede interna do Compose, como já estavam.
+
+Variáveis que mudam de valor (não de mecanismo) por causa disso:
+`DJANGO_ALLOWED_HOSTS=api.seudominio.com`,
+`CORS_ALLOWED_ORIGINS=https://app.seudominio.com`,
+`CSRF_TRUSTED_ORIGINS=https://app.seudominio.com`,
+`VITE_API_URL=https://api.seudominio.com/api`,
+`FRONTEND_URL=https://app.seudominio.com`. Atualizado em `.env.prod.example`.
+
+Fontes consultadas: [Compose Service](https://easypanel.io/docs/services/compose),
+[App Service](https://easypanel.io/docs/services/app),
+[Services](https://easypanel.io/docs/services).
 
 ## Estado atual (medido em 2026-09-16, não presumido)
 
@@ -275,6 +336,11 @@ com porta publicada para `0.0.0.0`.
 
 ### Phase 3 — Nginx de borda + TLS
 
+> ⚠️ **Superseded em 2026-09-16 para quem usa EasyPanel** — ver "Pivô" no
+> topo do arquivo. O EasyPanel já tem proxy + TLS por domínio no painel; esta
+> phase só se aplica a uma VPS sem painel algum. `docker/nginx/app.conf`
+> continua no repo para esse caso.
+
 **Objective:** um domínio, HTTPS de verdade, sem cookie nem CORS quebrando —
 fecha a Decisão 1.
 
@@ -322,6 +388,11 @@ irmão já fazia contra o Railway).
 
 ### Phase 4 — Deploy: script + gate de CI
 
+> ⚠️ **Superseded em 2026-09-16 para quem usa EasyPanel** — ver "Pivô" no
+> topo do arquivo e a **Phase 4b** abaixo. `docker/deploy.sh` continua no
+> repo para VPS sem painel; nesta VPS o mecanismo é a Deployment Trigger URL
+> do próprio EasyPanel, não SSH.
+
 **Objective:** deploy repetível por comando, não por sequência de passos
 manuais lembrados de memória.
 
@@ -362,6 +433,48 @@ um push com CI vermelho não chega (gate de `needs:`).
 - Se o repositório for privado e a chave SSH usada para `git pull` na VPS for
   diferente da chave de deploy do Actions — precisa de uma segunda chave
   (deploy key do repo) antes desta phase fechar.
+
+---
+
+### Phase 4b — Deploy via EasyPanel (substitui a Phase 4 nesta VPS)
+
+**Objective:** o mesmo gate por CI verde da Phase 4, sem competir com o
+mecanismo de deploy que o EasyPanel já é dono.
+
+- No painel: aba **Deployments** do serviço Compose → copiar a **Deployment
+  Trigger URL**. Ela tem um token embutido; mandar qualquer requisição pra
+  ela dispara `docker compose up --build -d` no servidor — inclusive
+  reconstruindo os serviços com `build:` (web/worker/beat/frontend).
+- Job `deploy-vps` do CI faz `curl` nessa URL depois dos outros jobs passarem
+  — mesmo `needs:`/gate por variável ausente que a Phase 4 já desenhava, só
+  troca SSH por HTTP. **Não também configurar o Auto Deploy nativo do
+  GitHub no painel** — as duas coisas juntas seriam dois gatilhos de deploy
+  para o mesmo push, e o que corre primeiro (webhook direto do GitHub, sem
+  esperar CI, vs. o job do CI) fica ao sabor da corrida.
+- Token da Trigger URL entra como `secrets.EASYPANEL_DEPLOY_URL` no GitHub —
+  segredo, não variável: a URL inteira autentica quem a chama.
+- `check --deploy` pós-subida (o gate que a Phase 4 tinha) não é chamável por
+  fora nesse caminho — a Trigger URL só inicia o deploy, não expõe shell no
+  container. Fica como limitação aceita: o `/api/health/` responder depois do
+  deploy é o sinal que resta (mesmo papel que o `pos-deploy` já cobre para o
+  Railway).
+
+**Files Touched:**
+`.github/workflows/ci.yml` · `README.md`
+
+**Verify:**
+```bash
+curl -fsS -X POST "$EASYPANEL_DEPLOY_URL"   # manual, primeira vez — confere no painel que um deploy novo apareceu
+# depois de configurar o secret: push em main -> Actions -> job deploy-vps verde -> painel mostra o deploy
+curl -fsS https://api.seudominio.com/api/health/   # confirma que respondeu depois
+```
+**Done When:** um push em `main` com CI verde aparece como deploy novo no
+painel do EasyPanel, sem SSH manual.
+
+**Replanning triggers:**
+- Se o EasyPanel expuser mais adiante uma forma de checar status do deploy
+  (não só disparar) — trocar o `curl` fire-and-forget por polling, como o
+  `pos-deploy` já faz contra `/api/health/ready/`.
 
 ---
 

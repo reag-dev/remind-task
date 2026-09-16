@@ -481,13 +481,18 @@ jobs:
   #
   # Diferente do `pos-deploy` acima: ali o Railway já implantou sozinho (o
   # push para `main` dispara o deploy da plataforma) e o job só observa. Numa
-  # VPS não existe quem observe o branch — então este job É o mecanismo de
-  # deploy, não uma checagem depois de outro implantar.
+  # VPS sem painel não existe quem observe o branch — então o job abaixo É o
+  # mecanismo de deploy. Numa VPS com EasyPanel (ver `deploy-vps-easypanel`),
+  # é o painel quem é dono do deploy — o job só chama a Trigger URL dele.
+  #
+  # ⚠️ Configure NO MÁXIMO UM dos dois jobs (`deploy-vps` OU
+  # `deploy-vps-easypanel`) para a mesma VPS. Os dois gatilhos juntos
+  # disparariam dois deploys concorrentes do mesmo push.
   #
   # Gate igual ao do `pos-deploy`: sem VPS_HOST/VPS_SSH_KEY configurados, avisa
   # e sai 0. Quem não configurou a VPS não vê o CI vermelho por isso.
   deploy-vps:
-    name: deploy — VPS Hostinger
+    name: deploy — VPS sem painel (SSH)
     runs-on: ubuntu-latest
     needs: [backend, frontend, producao, contrato]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -518,3 +523,39 @@ jobs:
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
           ssh -i ~/.ssh/id_deploy "${VPS_USER:-deploy}@$VPS_HOST" \
             "cd ${VPS_PATH:-~/remind-task} && sh docker/deploy.sh"
+
+  # ---------------------------------------------- deploy — VPS com EasyPanel
+  #
+  # O EasyPanel é dono do ciclo de deploy do serviço Compose (aba Deployments
+  # do serviço → "Deployment Trigger URL"): mandar qualquer requisição pra ela
+  # dispara `docker compose up --build -d` no servidor, reconstruindo
+  # web/worker/beat/frontend a partir do `docker-compose.prod.yml`. Este job só
+  # chama essa URL depois que os outros jobs passaram — o gate por CI verde
+  # que o `pos-deploy` já usa para o Railway, adaptado pra quem não tem quem
+  # observe o branch sozinho.
+  #
+  # NÃO ligar isto junto com o "Auto Deploy" nativo do GitHub no painel do
+  # EasyPanel — os dois seriam gatilhos concorrentes para o mesmo push.
+  deploy-vps-easypanel:
+    name: deploy — VPS com EasyPanel
+    runs-on: ubuntu-latest
+    needs: [backend, frontend, producao, contrato]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: A Trigger URL do EasyPanel está configurada?
+        id: alvo
+        run: |
+          if [ -z "${{ secrets.EASYPANEL_DEPLOY_URL }}" ]; then
+            echo "::warning::EASYPANEL_DEPLOY_URL (segredo) não configurado — deploy pulado. A URL está na aba Deployments do serviço Compose, no painel do EasyPanel."
+            echo "configurado=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "configurado=sim" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Segredo, não variável: a URL inteira carrega o token que autentica o
+      # disparo — quem a lê pode implantar por conta própria.
+      - name: Disparar deploy no EasyPanel
+        if: steps.alvo.outputs.configurado == 'sim'
+        env:
+          EASYPANEL_DEPLOY_URL: ${{ secrets.EASYPANEL_DEPLOY_URL }}
+        run: curl -fsS -X POST "$EASYPANEL_DEPLOY_URL"

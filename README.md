@@ -328,16 +328,16 @@ e aceita o cookie normalmente.
 Caminho alternativo ao Railway, para quem prefere (ou precisa) rodar numa VPS
 própria. Plano completo em
 [`.claude/plans/remind-task-vps-hostinger-2026-09-16.md`](.claude/plans/remind-task-vps-hostinger-2026-09-16.md).
-Diferença central: **um domínio só**, roteado por path pelo Nginx do host —
-`/api/` vai para o `web`, o resto vai para o `frontend`. Same-origin de
-verdade, então `AUTH_COOKIE_SAMESITE=Lax` funciona sem a ressalva que o
-Railway exige (dois domínios `*.up.railway.app` distintos).
+Duas variantes, que divergem só nos passos 3 e 4: **VPS pura** (só Docker) ou
+**VPS com [EasyPanel](https://easypanel.io)** — a maioria das VPS Hostinger
+com template de painel usa a segunda.
 
 ### 1. Pré-requisitos (fora deste repositório)
 
-VPS com Docker e Docker Compose instalados, acesso SSH por chave, e um
-domínio apontando para o IP da VPS. Nada disso é automatizado por este
-projeto — é ação manual de quem tem acesso à VPS.
+VPS com Docker e Docker Compose instalados (ou com EasyPanel, que já os
+inclui), acesso SSH por chave, e um domínio próprio com dois subdomínios
+possíveis (`api.` e `app.`) apontando para o IP da VPS. Nada disso é
+automatizado por este projeto — é ação manual de quem tem acesso à VPS.
 
 ### 2. Serviços
 
@@ -347,15 +347,27 @@ projeto — é ação manual de quem tem acesso à VPS.
 VPS de custo fixo, um processo ocioso a cada 15 min não pesa na conta) e
 `frontend` (nginx servindo o `dist/`, publicado só em loopback).
 
+**Topologia de domínio: dois subdomínios, um por serviço público** —
+`api.exemplo.com` → `web` (porta 8000) e `app.exemplo.com` → `frontend`
+(porta 80). Mesmo *registrable domain* nos dois, então
+`AUTH_COOKIE_SAMESITE=Lax` funciona sem a ressalva que o Railway exige (lá
+são dois domínios `*.up.railway.app` **diferentes**). Diferente de
+same-origin, porém: aqui o CORS é **real**, não inerte — o browser vê
+`api.` e `app.` como origens distintas. Ver a seção "VPS Hostinger" no
+final de [`.env.prod.example`](.env.prod.example) para os valores exatos.
+
 ```bash
 cp .env.prod.example .env.prod   # preencher os valores, ver a seção "VPS Hostinger" no arquivo
 docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
 ```
 
-### 3. Nginx de borda + TLS
+### 3a. VPS pura — Nginx de borda + TLS
 
 Roda no **host**, não em container — mais simples de depurar e de renovar
-certificado do que nginx-dentro-de-nginx:
+certificado do que nginx-dentro-de-nginx. `docker/nginx/app.conf` faz
+roteamento por **path** num domínio só (`/api/` → `web`, resto → `frontend`),
+que é uma topologia diferente da de dois subdomínios acima — ajuste o
+`server_name` e os `location` do arquivo se optar por essa variante:
 
 ```bash
 sudo apt install nginx certbot python3-certbot-nginx
@@ -369,7 +381,27 @@ sudo certbot --nginx -d app.exemplo.com   # emite o certificado e reescreve o ar
 arquivo real no host ao emitir o certificado, então não tente prever essa
 reescrita no repositório.
 
-### 4. Deploy
+### 3b. Com EasyPanel — Compose service
+
+Crie um serviço do tipo **Compose** (não "App") — é para isso que ele existe:
+"vários containers fortemente relacionados, implantados juntos". Aponte para
+o repositório e para `docker-compose.prod.yml`. Variáveis de `.env.prod`
+entram pelo editor de ambiente do próprio serviço, não por um arquivo na VPS.
+
+O EasyPanel já tem proxy + TLS automático por domínio (Traefik por baixo) —
+**não precisa do passo 3a**. Cada domínio no painel roteia para **um serviço
+interno inteiro**, não por path dentro do mesmo domínio — por isso a
+topologia é dois subdomínios, não um domínio com `/api/`:
+
+| Domínio (painel) | Serviço interno | Porta |
+|---|---|---|
+| `api.exemplo.com` | `web` | `8000` |
+| `app.exemplo.com` | `frontend` | `80` |
+
+`db` e `redis` não recebem domínio nenhum — ficam só na rede interna do
+Compose.
+
+### 4a. VPS pura — Deploy via SSH
 
 `docker/deploy.sh` roda **na VPS**: `git pull --ff-only`, build, `up -d`, e um
 `check --deploy` como gate pós-subida (não impede a troca de tráfego, só
@@ -386,6 +418,24 @@ variables → Actions → **Variables**) e `VPS_SSH_KEY` (mesma tela, em
 todo push para `main` com os outros jobs verdes — o mesmo gate por `needs:`
 que o `pos-deploy` do Railway já usa. Sem os secrets/vars configurados, o job
 avisa e sai 0; não trava quem ainda não configurou a VPS.
+
+### 4b. Com EasyPanel — Deployment Trigger URL
+
+O EasyPanel é dono do ciclo de deploy do serviço Compose: aba **Deployments**
+→ **Deployment Trigger URL**. Mandar qualquer requisição pra ela dispara
+`docker compose up --build -d` no servidor, reconstruindo `web`/`worker`/
+`beat`/`frontend`.
+
+```bash
+curl -fsS -X POST "$EASYPANEL_DEPLOY_URL"   # primeira vez, manual
+```
+
+Configure `EASYPANEL_DEPLOY_URL` como **Secret** (não Variable — a URL carrega
+o token de autenticação) no GitHub, e o job `deploy-vps-easypanel` do CI
+chama essa URL depois dos outros jobs passarem. **Não ligue os dois**
+(`deploy-vps` via SSH **e** `deploy-vps-easypanel`, ou o Auto Deploy nativo do
+GitHub no painel do EasyPanel junto com o job do CI) para a mesma VPS —
+seriam gatilhos de deploy concorrentes para o mesmo push.
 
 ### 5. Backup
 
@@ -407,6 +457,12 @@ a variável precisa estar na própria linha:
 ```
 0 3 * * * cd ~/remind-task && COMPOSE_FILE=docker-compose.prod.yml sh docker/backup.sh >> /var/log/remind-backup.log 2>&1
 ```
+
+**Com EasyPanel:** o `cd` acima precisa apontar para onde o EasyPanel de fato
+clonou o repositório (não necessariamente `~/remind-task`) — confira o caminho
+real no painel do serviço ou com `docker inspect` no container `db` em
+execução (`Mounts` mostra a origem do bind mount, se houver). Não medido nesta
+implementação; verificar antes de confiar no cron.
 
 O destino do arquivo precisa sair da própria VPS (copiar para outro storage)
 para sobreviver ao cenário "a VPS morreu" — sem isso o backup e o banco
