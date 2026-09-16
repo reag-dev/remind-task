@@ -74,22 +74,24 @@ def _csrf_origin(host: str) -> str | None:
     return f"https://{host}"
 
 
-# O host do healthcheck sai da derivação, e isto é correção de um vazamento.
+# Os hosts de healthcheck saem da derivação, e isto é correção de um vazamento.
 #
-# Ele entrou em ALLOWED_HOSTS para o healthcheck da plataforma não levar 400
-# (ver base.py). Só que CSRF_TRUSTED_ORIGINS é derivado dali quando não vem
-# declarado — e o efeito foi passar a confiar em `https://healthcheck.railway.app`
-# para fins de CSRF. Um domínio que não é nosso, num lugar onde a lista existe
-# justamente para dizer de quem aceitamos POST.
+# Eles entram em ALLOWED_HOSTS para o healthcheck (da plataforma, ou do Docker
+# Compose/EasyPanel — ver base.py) não levar 400. Só que CSRF_TRUSTED_ORIGINS é
+# derivado dali quando não vem declarado — e o efeito seria passar a confiar em
+# `https://healthcheck.railway.app` ou `https://localhost` para fins de CSRF.
+# Nenhum dos dois é nosso, num lugar onde a lista existe justamente para dizer
+# de quem aceitamos POST.
 #
-# Sem consequência prática hoje (o healthcheck só faz GET, e em produção a lista
-# vem declarada), mas é exatamente o tipo de acréscimo silencioso que a
+# Sem consequência prática hoje (os dois só fazem GET, e em produção a lista
+# costuma vir declarada), mas é exatamente o tipo de acréscimo silencioso que a
 # igualdade estrita de `tests/security/test_transport.py` existe para pegar —
-# e pegou.
+# e pegou, duas vezes.
+_HOSTS_DE_HEALTHCHECK = {RAILWAY_HEALTHCHECK_HOST, HEALTHCHECK_HOST_INTERNO}  # noqa: F405
 _hosts_para_csrf = [
     host
     for host in ALLOWED_HOSTS  # noqa: F405
-    if host != RAILWAY_HEALTHCHECK_HOST  # noqa: F405
+    if host not in _HOSTS_DE_HEALTHCHECK
 ]
 
 # Derivar de ALLOWED_HOSTS cobre o caso comum (mesmo domínio, atrás de proxy

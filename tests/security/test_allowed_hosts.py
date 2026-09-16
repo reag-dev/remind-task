@@ -38,14 +38,17 @@ BASE_DO_AMBIENTE = {
 # mediu a ausência. Declarada como string vazia, o ambiente vence.
 VAZIAS = {"DJANGO_ALLOWED_HOSTS": "", "RAILWAY_PUBLIC_DOMAIN": ""}
 
-# Entra na lista junto com o domínio público, e por isso aparece nas asserções
-# abaixo: é o Host com que a plataforma bate no healthcheck pela rede interna.
-# Ver tests/security/test_healthcheck_plataforma.py, que mede o porquê — aqui só
-# se mede a composição da lista.
+# Entram na lista junto com o domínio público, e por isso aparecem nas
+# asserções abaixo: são os Hosts com que a plataforma (Railway) e o Docker
+# Compose/EasyPanel batem no healthcheck, pela rede interna ou de dentro do
+# próprio container. Ver tests/security/test_healthcheck_plataforma.py, que
+# mede o porquê — aqui só se mede a composição da lista.
 #
 # As asserções continuam sobre a lista INTEIRA de propósito: foi a igualdade
-# exata que denunciou este acréscimo, em vez de deixá-lo passar despercebido.
+# exata que denunciou o primeiro desses acréscimos, em vez de deixá-lo passar
+# despercebido — e a mesma igualdade pegou o segundo.
 HOST_DO_HEALTHCHECK = "healthcheck.railway.app"
+HOST_DO_HEALTHCHECK_INTERNO = "localhost"
 
 
 def _carregar(**extra: str) -> subprocess.CompletedProcess:
@@ -91,14 +94,22 @@ def test_o_dominio_da_plataforma_sozinho_ja_satisfaz():
     """
     resultado = _carregar(RAILWAY_PUBLIC_DOMAIN="web-abc.up.railway.app")
 
-    assert _hosts(resultado) == ["web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
+    assert _hosts(resultado) == [
+        "web-abc.up.railway.app",
+        HOST_DO_HEALTHCHECK,
+        HOST_DO_HEALTHCHECK_INTERNO,
+    ]
 
 
 def test_a_variavel_sozinha_tambem_satisfaz():
     """O caminho de quem não está no Railway, ou tem domínio próprio."""
     resultado = _carregar(DJANGO_ALLOWED_HOSTS="api.exemplo.com")
 
-    assert _hosts(resultado) == ["api.exemplo.com", HOST_DO_HEALTHCHECK]
+    assert _hosts(resultado) == [
+        "api.exemplo.com",
+        HOST_DO_HEALTHCHECK,
+        HOST_DO_HEALTHCHECK_INTERNO,
+    ]
 
 
 def test_os_dois_convivem_sem_duplicar():
@@ -109,7 +120,12 @@ def test_os_dois_convivem_sem_duplicar():
 
     hosts = _hosts(resultado)
 
-    assert hosts == ["api.exemplo.com", "web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
+    assert hosts == [
+        "api.exemplo.com",
+        "web-abc.up.railway.app",
+        HOST_DO_HEALTHCHECK,
+        HOST_DO_HEALTHCHECK_INTERNO,
+    ]
     assert len(hosts) == len(set(hosts))
 
 
@@ -119,7 +135,11 @@ def test_dominio_ja_declarado_nao_entra_duas_vezes():
         RAILWAY_PUBLIC_DOMAIN="web-abc.up.railway.app",
     )
 
-    assert _hosts(resultado) == ["web-abc.up.railway.app", HOST_DO_HEALTHCHECK]
+    assert _hosts(resultado) == [
+        "web-abc.up.railway.app",
+        HOST_DO_HEALTHCHECK,
+        HOST_DO_HEALTHCHECK_INTERNO,
+    ]
 
 
 def test_a_mensagem_aponta_de_onde_o_valor_deveria_vir():

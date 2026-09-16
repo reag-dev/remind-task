@@ -170,6 +170,28 @@ def test_o_resto_da_aplicacao_continua_redirecionando():
     assert resposta["headers"]["Location"].startswith("https://")
 
 
+# --------------------------------------- o healthcheck do Docker/EasyPanel
+
+
+def test_o_healthcheck_do_compose_nao_leva_400():
+    """
+    Achado implantando via EasyPanel (2026-09-16): o healthcheck de
+    `docker-compose.prod.yml` bate em `http://localhost:8000/...`, de dentro do
+    próprio container — nunca atravessa a rede pública, mas o Host é
+    literalmente "localhost". Com `DJANGO_ALLOWED_HOSTS` só o domínio real (sem
+    "localhost"), esta requisição levava 400 e o container ficava "unhealthy"
+    para sempre — sintoma no painel: "Service is not reachable", com a
+    aplicação perfeitamente de pé. Mesma classe de bug que o teste acima cobre
+    para o healthcheck do Railway.
+    """
+    resposta = _bater("/api/health/", "localhost")
+
+    assert resposta["status"] != 400, (
+        "\"localhost\" foi recusado: o healthcheck do compose/EasyPanel nunca "
+        "sairia de 'unhealthy'"
+    )
+
+
 def test_sem_host_configurado_o_healthcheck_nao_entra_sozinho():
     """
     Aceitar um Host que não é nosso tem custo, e o custo fica contido.

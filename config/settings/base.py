@@ -66,6 +66,22 @@ RAILWAY_HEALTHCHECK_HOST = "healthcheck.railway.app"
 if ALLOWED_HOSTS and RAILWAY_HEALTHCHECK_HOST not in ALLOWED_HOSTS:
     ALLOWED_HOSTS = [*ALLOWED_HOSTS, RAILWAY_HEALTHCHECK_HOST]
 
+# Mesmo raciocínio, para o healthcheck do Docker Compose (dev e prod) e para
+# painéis como o EasyPanel que rodam o próprio healthcheck de dentro do
+# container. Ele bate em `http://localhost:8000/...` — nunca atravessa a rede
+# pública, mas o Host da requisição é literalmente "localhost". Achado
+# implantando via EasyPanel: com `DJANGO_ALLOWED_HOSTS` só com o domínio real
+# (sem "localhost"), o healthcheck do `docker-compose.prod.yml` recebia 400
+# (DisallowedHost) para sempre — o container nunca saía de "unhealthy", e quem
+# decide rotear tráfego a partir da saúde do container (EasyPanel, o
+# `depends_on: condition: service_healthy` do próprio compose) nunca via um
+# serviço "no ar". Sintoma: "Service is not reachable" com a aplicação
+# perfeitamente de pé — a mesma classe de 502-com-log-limpo que
+# RAILWAY_HEALTHCHECK_HOST já existe para evitar.
+HEALTHCHECK_HOST_INTERNO = "localhost"
+if ALLOWED_HOSTS and HEALTHCHECK_HOST_INTERNO not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [*ALLOWED_HOSTS, HEALTHCHECK_HOST_INTERNO]
+
 # ---------------------------------------------------------------- apps
 
 DJANGO_APPS = [

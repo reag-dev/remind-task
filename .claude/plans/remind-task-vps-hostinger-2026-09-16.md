@@ -49,6 +49,24 @@ Duas coisas que o plano não previu, achadas rodando a stack de verdade:
    `x-django` (e os dois `${VAR:?...}` que citavam o nome no texto do erro),
    e `docker/deploy.sh`/README ajustados para o mesmo nome — que também é
    compatível com VPS sem painel, sem custo.
+5. **"Service is not reachable" — o healthcheck do `web` batia 400 contra
+   `DJANGO_ALLOWED_HOSTS` real, também reportado pelo operador.** O
+   healthcheck de `docker-compose.prod.yml` roda `curl http://localhost:8000/
+   api/health/` de DENTRO do container — o Host da requisição é literalmente
+   `localhost`. Com `DJANGO_ALLOWED_HOSTS=api.exemplo.com` (sem "localhost"),
+   o Django recusa com 400 `DisallowedHost`, o healthcheck nunca passa, o
+   container fica "unhealthy" para sempre, e o EasyPanel (que roteia por
+   saúde do container) nunca serve tráfego — mesma classe de bug que
+   `RAILWAY_HEALTHCHECK_HOST` já existia para evitar do lado do Railway,
+   e que passou batido aqui porque o `.env` de desenvolvimento já tinha
+   "localhost" em `DJANGO_ALLOWED_HOSTS` (mascarando o problema em todo
+   teste local). Corrigido com o mesmo padrão: `HEALTHCHECK_HOST_INTERNO =
+   "localhost"` entra em `ALLOWED_HOSTS` sempre que a lista não estiver vazia
+   (`config/settings/base.py`), excluído da derivação de `CSRF_TRUSTED_ORIGINS`
+   igual ao host do Railway (`config/settings/prod.py`). Testes atualizados:
+   `tests/security/test_allowed_hosts.py` (4 igualdades estritas) e novo
+   `test_o_healthcheck_do_compose_nao_leva_400` em
+   `tests/security/test_healthcheck_plataforma.py`.
 
 Confirmado por medição, não suposição: `docker compose -f
 docker-compose.prod.yml build` (com `base.lock`, sem pytest/ruff na imagem),
